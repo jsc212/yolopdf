@@ -1,0 +1,149 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            preset: linux
+            qt_arch: linux_gcc_64
+          - os: windows-2022
+            preset: windows-msvc
+            qt_arch: win64_msvc2022_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build libgl1-mesa-dev libxkbcommon-dev libvulkan-dev qpdf poppler-utils
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+        with:
+          arch: x64
+      - uses: microsoft/setup-msbuild@v2
+        if: runner.os == 'Windows'
+      - name: Windows independent PDF tools
+        if: runner.os == 'Windows'
+        run: choco install qpdf poppler --yes --no-progress
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: ${{ matrix.qt_arch }}
+          cache: true
+      - name: Configure
+        # Test-only packages: font generation and independent PDFium rendering.
+        run: python -m pip install -r tests/requirements.txt
+      - name: Configure CMake
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+      - name: Test engine and CLI
+        run: ctest --preset ${{ matrix.preset }}
+      - name: Validate generated PDFs independently
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in build/linux/tests/corpus/basic.pdf build/linux/tests/corpus/nested.pdf build/linux/tests/corpus/embedded.pdf; do
+            qpdf --check "$file"
+          done
+          pdftotext build/linux/tests/corpus/basic.pdf build/linux/tests/basic.txt
+          python3 -c "from pathlib import Path; assert 'Hello yolopdf' in Path('build/linux/tests/basic.txt').read_text()"
+
+  android:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK and NDK
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;26.1.10909125"
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          host: all_os
+          target: android
+          arch: android_arm64_v8a
+          cache: true
+      - name: Configure Android arm64
+        run: |
+          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/26.1.10909125"
+          test -n "$QT_HOST_PATH"
+          cmake --preset android-arm64 -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+      - name: Build APK and CLI
+        run: cmake --build --preset android-arm64 --target apk yolopdf-cli
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yolopdf-android-arm64-debug
+          path: build/android-arm64/android-build/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+
+  android-emulator:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build qpdf poppler-utils libgl1-mesa-dev
+          python -m pip install -r tests/requirements.txt
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;26.1.10909125"
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          host: all_os
+          target: android
+          arch: android_x86_64
+          cache: true
+      - name: Build emulator test APK and native driver
+        run: |
+          export ANDROID_NDK_ROOT="$ANDROID_HOME/ndk/26.1.10909125"
+          cmake --preset android-x86_64 -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" -DYOLOPDF_ANDROID_TEST_HOOKS=ON
+          cmake --build --preset android-x86_64 --target apk yolopdf-cli
+      - name: Enable KVM for the emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          disable-animations: true
+          script: bash tests/android/run-emulator.sh build/android-x86_64
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-stage1-results
+          path: build/android-x86_64/*-*.pdf

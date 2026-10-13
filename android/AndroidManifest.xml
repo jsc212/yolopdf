@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="org.yolopdf.app" android:versionCode="1" android:versionName="0.1.0">
+    <application android:name="org.qtproject.qt.android.bindings.QtApplication"
+        android:label="yolopdf" android:allowBackup="false" android:hardwareAccelerated="true">
+        <activity android:name="org.yolopdf.YoloActivity"
+            android:label="yolopdf" android:exported="true"
+            android:launchMode="singleTop"
+            android:configChanges="orientation|uiMode|screenLayout|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|keyboard|keyboardHidden|navigation|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:mimeType="application/pdf" android:scheme="content" />
+                <data android:mimeType="application/pdf" android:scheme="file" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+            <meta-data android:name="android.app.lib_name" android:value="-- %%INSERT_APP_LIB_NAME%% --" />
+            <meta-data android:name="android.app.arguments" android:value="-- %%INSERT_APP_ARGUMENTS%% --" />
+        </activity>
+        <provider android:name="org.yolopdf.ImageProvider" android:authorities="org.yolopdf.app.images"
+            android:exported="false" android:grantUriPermissions="true" />
+    </application>
+    <!-- Offline by design: no INTERNET or storage permission. -->
+</manifest>

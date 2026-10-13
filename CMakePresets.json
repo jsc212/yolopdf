@@ -1,0 +1,34 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": {"major": 3, "minor": 24, "patch": 0},
+  "configurePresets": [
+    {
+      "name": "base", "hidden": true, "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {"CMAKE_BUILD_TYPE": "Release", "BUILD_TESTING": "ON"}
+    },
+    {"name": "linux", "inherits": "base", "displayName": "Linux (Qt 6.8+)"},
+    {"name": "windows-msvc", "inherits": "base", "displayName": "Windows (MSVC x64, Qt 6.8+)"},
+    {
+      "name": "android", "hidden": true, "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_TOOLCHAIN_FILE": "$env{ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake",
+        "ANDROID_PLATFORM": "android-28",
+        "QT_HOST_PATH": "$env{QT_HOST_PATH}",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {"name": "android-arm64", "inherits": "android", "cacheVariables": {"ANDROID_ABI": "arm64-v8a"}},
+    {"name": "android-x86_64", "inherits": "android", "cacheVariables": {"ANDROID_ABI": "x86_64"}}
+  ],
+  "buildPresets": [
+    {"name": "linux", "configurePreset": "linux", "jobs": 4},
+    {"name": "windows-msvc", "configurePreset": "windows-msvc", "jobs": 4},
+    {"name": "android-arm64", "configurePreset": "android-arm64", "jobs": 4},
+    {"name": "android-x86_64", "configurePreset": "android-x86_64", "jobs": 4}
+  ],
+  "testPresets": [
+    {"name": "linux", "configurePreset": "linux", "output": {"outputOnFailure": true}},
+    {"name": "windows-msvc", "configurePreset": "windows-msvc", "output": {"outputOnFailure": true}}
+  ]
+}

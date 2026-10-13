@@ -1,0 +1,20 @@
+# Generated corpus
+
+`generate.py` writes fixtures into the build directory using the pinned test
+Python packages and qpdf. Page content, object structures and geometric YoloTest
+fonts are original and licensed with yolopdf. Embedded Noto Sans and Droid Sans
+Fallback come from the pinned MuPDF tree. Noto uses SIL OFL
+(`resources/fonts/noto/COPYING`); Droid uses Apache-2.0
+(`resources/fonts/droid/NOTICE`). Preserve both notices.
+
+Fixtures cover subset TrueType/CFF/CID fonts, accents/CJK, coverage/imports,
+limited encodings, collections, rotation/positioning, unsupported scripts/modes,
+shared Forms/images, inline images, alpha/vector/GIF artwork, AcroForm collisions,
+links, mixed geometry/UserUnit and malformed input.
+
+`encrypted.pdf` uses fixture passwords test-user/test-owner.
+`signature-marker.pdf` tests field detection, not cryptographic signatures.
+`conformance-declarations.pdf` tests PDF/A and tagged markers, without claiming
+actual conformance. A real signed-file proof and curated golden images remain
+open gates. Private documents must stay outside the repository; none were
+available in this workspace.
