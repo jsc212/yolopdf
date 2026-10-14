@@ -139,7 +139,9 @@ Fifteen Linux suites cover engine/core contracts, exact-font lookup, independent
 replay, CLI contracts, the header boundary and QML startup/sample editing.
 Independent checks use qpdf, Poppler and PDFium. Generated fixtures and source
 render comparisons do not replace private-document trials or curated goldens.
-No private corpus was available.
+One privately supplied receipt was checked locally for opening and rendering,
+with generated regressions for marked-content scopes crossing `q/Q`. Broader
+private-document trials remain pending. The receipt is not committed.
 
 Poppler/PDFium versions tested here use raw-unit raster dimensions on the
 UserUnit fixture, while MuPDF applies UserUnit. Tests account for each engine's

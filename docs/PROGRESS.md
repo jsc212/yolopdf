@@ -72,6 +72,15 @@ The separate local Fedora 44 container could not install packages because the
 cloud egress policy denied Fedora repository hosts; native CI supplied the
 distribution validation.
 
+A privately supplied four-page receipt exposed marked-content state incorrectly
+being saved/restored with `q/Q`. The tracer now tracks `BMC/BDC/EMC` separately,
+including inherited `/ActualText` restrictions in Forms. Generated regressions
+cover crossing scopes, multiple content streams, editing, reopening and undo;
+qpdf/Poppler/PDFium verify the edited crossing-scope fixture independently.
+The original receipt opens in the app on offscreen and native Wayland backends,
+all four pages trace/render, and its source hash remains unchanged. The receipt
+and its contents are not committed.
+
 Android native/Java compilation and arm64 APK/AAB/x86_64 APK creation pass.
 The native driver ran Latin-accent and CJK replacements on an API 29 emulator;
 both results passed qpdf and independent Poppler/PDFium text extraction.
@@ -95,7 +104,7 @@ regressions before upgrading MuPDF. The upstream submodule remains unchanged.
   signing. Debug artifacts are previews, not store-ready releases.
   [The inspected cross-platform run](https://github.com/jsc212/yolopdf/actions/runs/38505649654)
   reports failures in Windows and Flatpak; its native Linux job uploaded an artifact.
-- Private invoices/brochures/scans: none were available. Broader font/layout
+- Broader private invoices/brochures/scans and font/layout
   coverage and a curated golden-image corpus are still needed.
 - Actual-size print proofs, including a measured 40 × 20 mm stamp. Tested
   Poppler/PDFium UserUnit raster behavior differs from MuPDF; object dimensions

@@ -90,7 +90,8 @@ class Stage1Test(unittest.TestCase):
                                   ("subset-cjk.pdf", "日文"), ("subset-cff.pdf", "éè"), ("narrow-encoding.pdf", "Ω"),
                                   ("graphics-state-font.pdf", "Hi yolopdf"), ("rotated-text.pdf", "Hi yolopdf"),
                                   ("positioned-text.pdf", "Hi yolopdf"),
-                                  ("marked.pdf", "Hi"), ("nested.pdf", "Text")):
+                                  ("marked.pdf", "Hi"), ("marked-crossing-graphics.pdf", "Hi"),
+                                  ("nested.pdf", "Text")):
             with self.subTest(fixture=name):
                 source = CORPUS / name
                 original_hash = hashlib.sha256(source.read_bytes()).digest()

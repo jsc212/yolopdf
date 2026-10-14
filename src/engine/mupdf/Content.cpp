@@ -64,8 +64,6 @@ struct Graphics {
     std::string fontName;
     std::string fontResource;
     bool clipped{};
-    std::string markedReason;
-    std::vector<std::string> markedStack;
     std::string colorSpace{"DeviceGray"};
     std::vector<double> color{0};
     Graphics() { text.scale = 1; }
@@ -76,6 +74,9 @@ struct State {
     Trace *trace;
     Graphics graphics;
     std::vector<Graphics> stack;
+    // Marked-content sequences are independent of the q/Q graphics-state stack.
+    std::string markedReason;
+    std::vector<std::string> markedStack;
     pdf_text_object_state tos{};
     std::vector<FormStep> forms;
     int showIndex{}, occurrence{};
@@ -226,8 +227,8 @@ void textShow(State &s, const char *bytes, std::size_t size, pdf_obj *array = nu
         run.info.reason = "Invisible or clipping text render mode";
     else if (s.graphics.clipped)
         run.info.reason = "Text under a path clipping operation";
-    else if (!s.graphics.markedReason.empty())
-        run.info.reason = s.graphics.markedReason;
+    else if (!s.markedReason.empty())
+        run.info.reason = s.markedReason;
     else if (s.graphics.text.size <= 0 || s.graphics.text.scale <= 0)
         run.info.reason = "Non-positive font size or horizontal scale";
     else if (objectName(s.ctx, get(s.ctx, run.fontObject, "Subtype")) == "Type0" &&
@@ -365,25 +366,25 @@ pdf_processor *newTracer(fz_context *ctx, State &s) {
         p->op_Wstar = [](fz_context *, pdf_processor *p) { state(p).graphics.clipped = true; };
     p->op_BMC = [](fz_context *c, pdf_processor *p, const char *) {
         callback(c, [&] {
-            auto &g = state(p).graphics;
-            g.markedStack.push_back(g.markedReason);
+            auto &s = state(p);
+            s.markedStack.push_back(s.markedReason);
         });
     };
     p->op_BDC = [](fz_context *c, pdf_processor *p, const char *, pdf_obj *, pdf_obj *properties) {
         callback(c, [&] {
-            auto &g = state(p).graphics;
-            g.markedStack.push_back(g.markedReason);
+            auto &s = state(p);
+            s.markedStack.push_back(s.markedReason);
             if (get(c, properties, "ActualText"))
-                g.markedReason = "Marked content has an ActualText override";
+                s.markedReason = "Marked content has an ActualText override";
         });
     };
     p->op_EMC = [](fz_context *c, pdf_processor *p) {
         callback(c, [&] {
-            auto &g = state(p).graphics;
-            if (g.markedStack.empty())
+            auto &s = state(p);
+            if (s.markedStack.empty())
                 throw Error(ErrorCode::InvalidDocument, "Unbalanced marked content");
-            g.markedReason = g.markedStack.back();
-            g.markedStack.pop_back();
+            s.markedReason = s.markedStack.back();
+            s.markedStack.pop_back();
         });
     };
     p->op_g = [](fz_context *c, pdf_processor *p, float v) {
@@ -431,6 +432,8 @@ pdf_processor *newTracer(fz_context *ctx, State &s) {
                             "Recursive or excessively nested Form content");
             State child(c, s.doc, s.trace);
             child.graphics = s.graphics;
+            // A Form has its own sequence stack but inherits outer restrictions.
+            child.markedReason = s.markedReason;
             child.forms = s.forms;
             child.forms.push_back({occurrence, form});
             auto *transform = get(c, form, "Matrix");

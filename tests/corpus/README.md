@@ -10,11 +10,14 @@ Fallback come from the pinned MuPDF tree. Noto uses SIL OFL
 Fixtures cover subset TrueType/CFF/CID fonts, accents/CJK, coverage/imports,
 limited encodings, collections, rotation/positioning, unsupported scripts/modes,
 shared Forms/images, inline images, alpha/vector/GIF artwork, AcroForm collisions,
-links, mixed geometry/UserUnit and malformed input.
+links, mixed geometry/UserUnit and malformed input. Marked-content fixtures cover
+sequences crossing graphics save/restore and content streams, `/ActualText`
+scope restoration and restrictions inherited by nested Forms.
 
 `encrypted.pdf` uses fixture passwords test-user/test-owner.
 `signature-marker.pdf` tests field detection, not cryptographic signatures.
 `conformance-declarations.pdf` tests PDF/A and tagged markers, without claiming
 actual conformance. A real signed-file proof and curated golden images remain
-open gates. Private documents must stay outside the repository; none were
-available in this workspace.
+open gates. Private documents stay outside the repository. A supplied receipt
+was used locally to reproduce a marked-content bug; these fixtures contain
+original generated content rather than that receipt or its text.

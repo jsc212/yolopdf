@@ -136,7 +136,8 @@ Missing independent tools are failures. UI tests draw a marker, add a strikeout,
 undo/redo, move an image, preview imported fonts, open a password-protected batch,
 and save editable/flattened copies. See [PROGRESS.md](PROGRESS.md) for limitations.
 Windows omits Linux fontconfig, native replay and process-kill targets. Private PDF documents stay outside
-the checkout. No real-document corpus was available in this task.
+the checkout. One privately supplied receipt was used for local opening/rendering
+validation; its regression fixtures contain only original generated content.
 
 The cloud toolchain is installed outside the repository, with a test venv and
 writable font caches. Activate it in each new shell:

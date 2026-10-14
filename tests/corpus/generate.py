@@ -142,6 +142,22 @@ def stage1(destination, basic, nested):
     write_pdf(destination / "mixed-style.pdf", mixed)
     marked = list(basic); marked[4] = stream(b"/Span << /MCID 0 >> BDC BT /F1 18 Tf 30 140 Td (Hello yolopdf) Tj ET EMC")
     write_pdf(destination / "marked.pdf", marked)
+    crossing = list(basic)
+    crossing[2] = b"<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /Contents [5 0 R 7 0 R 8 0 R] >>"
+    crossing[4] = stream(b"q /Span << /MCID 0 >> BDC")
+    crossing.extend([stream(b"Q BT /F1 18 Tf 30 140 Td (Hello yolopdf) Tj ET"), stream(b"EMC")])
+    write_pdf(destination / "marked-crossing-graphics.pdf", crossing)
+    for name, opening, closing in (
+        ("actual-text-crossing-open", b"q /Span << /ActualText (Alternative text) >> BDC Q", b"EMC"),
+        ("actual-text-crossing-close", b"/Span << /ActualText (Alternative text) >> BDC q", b"EMC Q"),
+    ):
+        scoped = list(basic)
+        scoped[4] = stream(opening + b" BT /F1 18 Tf 30 140 Td (Inside) Tj ET " + closing + b" BT /F1 18 Tf 30 100 Td (Outside) Tj ET")
+        write_pdf(destination / (name + ".pdf"), scoped)
+    scoped_form = list(nested)
+    scoped_form[5] = stream(b"/Span << /ActualText (Alternative text) >> BDC q /Shared Do Q EMC")
+    scoped_form[3] = stream(b"q /Span BMC Q BT /F1 12 Tf 10 20 Td (Shared text) Tj ET EMC", b"/Type /XObject /Subtype /Form /BBox [0 0 100 50] /Resources << /Font << /F1 5 0 R >> >> ")
+    write_pdf(destination / "actual-text-form-scope.pdf", scoped_form)
     gs_font = list(basic)
     gs_font[2] = b"<< /Type /Page /Parent 2 0 R /Resources << /ExtGState << /GS1 << /Font [4 0 R 18] >> >> >> /Contents 5 0 R >>"
     gs_font[4] = stream(b"/GS1 gs BT 30 140 Td (Hello yolopdf) Tj ( NEXT) Tj ET")

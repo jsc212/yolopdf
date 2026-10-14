@@ -135,6 +135,39 @@ class Stage1Test : public QObject {
         auto declarations = openDocument(fixture("conformance-declarations.pdf"));
         QCOMPARE(declarations->inspect().warnings.size(), std::size_t{2});
     }
+    void markedContentIsIndependentOfGraphicsState() {
+        auto doc = openDocument(fixture("marked-crossing-graphics.pdf"));
+        auto reference = openDocument(fixture("marked.pdf"));
+        QCOMPARE(doc->textRuns(0).runs.size(), std::size_t{1});
+        QVERIFY(doc->textRuns(0).runs[0].status == TextStatus::OriginalFont);
+        QCOMPARE(doc->render(0).rgba, reference->render(0).rgba);
+        doc->replaceText(0, {0, "Hi", {}});
+        reference->replaceText(0, {0, "Hi", {}});
+        QCOMPARE(doc->render(0).rgba, reference->render(0).rgba);
+        QTemporaryDir dir;
+        const auto output = dir.filePath("marked.pdf");
+        save(output, *doc);
+        auto reopened = openDocument(output.toStdString());
+        QCOMPARE(reopened->textRuns(0).runs[0].text, std::string("Hi"));
+        doc->undo();
+        QCOMPARE(doc->textRuns(0).runs[0].text, std::string("Hello yolopdf"));
+        for (const char *file :
+             {"actual-text-crossing-open.pdf", "actual-text-crossing-close.pdf"}) {
+            auto scoped = openDocument(fixture(file));
+            const auto runs = scoped->textRuns(0).runs;
+            QCOMPARE(runs.size(), std::size_t{2});
+            QVERIFY(runs[0].status == TextStatus::Unsupported);
+            QCOMPARE(runs[0].reason, std::string("Marked content has an ActualText override"));
+            QVERIFY(runs[1].status == TextStatus::OriginalFont);
+            scoped->replaceText(0, {1, "After", {}});
+            QCOMPARE(scoped->textRuns(0).runs[1].text, std::string("After"));
+        }
+        auto form = openDocument(fixture("actual-text-form-scope.pdf"));
+        const auto inside = form->textRuns(0).runs;
+        QCOMPARE(inside.size(), std::size_t{1});
+        QVERIFY(inside[0].status == TextStatus::Unsupported);
+        QCOMPARE(inside[0].reason, std::string("Marked content has an ActualText override"));
+    }
     void protectedDocumentsFailExplicitly() {
         try {
             openDocument(fixture("encrypted.pdf"));
