@@ -168,6 +168,49 @@ class Stage1Test : public QObject {
         QVERIFY(inside[0].status == TextStatus::Unsupported);
         QCOMPARE(inside[0].reason, std::string("Marked content has an ActualText override"));
     }
+    void safeRectangularClipsPermitEditingAndRejectClippedReplacements() {
+        auto doc = openDocument(fixture("rectangular-clip.pdf"));
+        QVERIFY(doc->textRuns(0).runs[0].status == TextStatus::OriginalFont);
+        const auto before = doc->render(0).rgba;
+        doc->replaceLine(0, {0, "Hi yolopdf"});
+        QCOMPARE(doc->textRuns(0).runs[0].text, std::string("Hi yolopdf"));
+        doc->undo();
+        QCOMPARE(doc->render(0).rgba, before);
+        for (const char *file : {"partial-clip.pdf", "complex-clip.pdf"}) {
+            auto unsupported = openDocument(fixture(file));
+            QVERIFY(unsupported->textRuns(0).runs[0].status == TextStatus::Unsupported);
+            QVERIFY_EXCEPTION_THROWN(unsupported->replaceText(0, {0, "Hi"}), Error);
+        }
+        auto edge = openDocument(fixture("rectangular-edge-clip.pdf"));
+        const auto original = edge->render(0).rgba;
+        TextReplacement edit{0, "WWWWWW"};
+        edit.allowOverflow = true;
+        QVERIFY_EXCEPTION_THROWN(edge->replaceText(0, edit), Error);
+        QCOMPARE(edge->render(0).rgba, original);
+        QVERIFY(!edge->canUndo());
+    }
+    void existingAnnotationRecoveryKeepsUserHistory() {
+        auto doc = openDocument(fixture("existing-freetext.pdf"));
+        QCOMPARE(doc->annotations(0).size(), std::size_t{1});
+        QVERIFY(doc->annotations(0)[0].type == AnnotationType::FreeText);
+        doc->render(0);
+        AnnotationSpec s;
+        s.type = AnnotationType::Rectangle;
+        s.bounds = {20, 20, 60, 60};
+        doc->addAnnotation(0, s);
+        const auto position = doc->history().position;
+        const auto data = doc->recoveryData();
+        QCOMPARE(doc->history().position, position);
+        QTemporaryDir dir;
+        QFile file(dir.filePath("snapshot.pdf"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write(reinterpret_cast<const char *>(data.pdf.data()), data.pdf.size());
+        file.close();
+        auto recovered = openDocument(file.fileName().toStdString());
+        recovered->loadRecoveryJournal(data.journal);
+        recovered->undo();
+        QCOMPARE(recovered->annotations(0).size(), std::size_t{1});
+    }
     void protectedDocumentsFailExplicitly() {
         try {
             openDocument(fixture("encrypted.pdf"));

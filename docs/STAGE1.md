@@ -112,8 +112,15 @@ document move/undo and refuses inconsistent history states across tabs.
 
 ## Saving, recovery and printing
 
-Unsigned export clones the reachable catalog graph, subsets fonts on the clone,
-writes and reopens it, leaving the live journal intact. Desktop saves use
+Existing PDFs that support incremental writing retain their original bytes and
+append the changed objects. Direct page text/image edits splice only the selected
+operator into its decoded content stream, retaining unrelated numeric operands
+without float rounding. Nested Forms, inline images and operands spanning streams
+still use the interpreter rewrite path. New or repaired documents use a reachable
+catalog clone with font subsetting; existing-document saves keep embedded font
+programs intact. Saves reopen the output for verification and leave the live
+journal intact. Snapshot appearance generation is folded into the preceding
+operation rather than adding a separate undo step. Desktop saves use
 QSaveFile with no direct-write fallback and detect external source changes.
 Android retains a verified cache before streaming to a SAF `rwt` descriptor;
 provider writes cannot have desktop filesystem atomicity.

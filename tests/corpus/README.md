@@ -12,7 +12,12 @@ limited encodings, collections, rotation/positioning, unsupported scripts/modes,
 shared Forms/images, inline images, alpha/vector/GIF artwork, AcroForm collisions,
 links, mixed geometry/UserUnit and malformed input. Marked-content fixtures cover
 sequences crossing graphics save/restore and content streams, `/ActualText`
-scope restoration and restrictions inherited by nested Forms.
+scope restoration and restrictions inherited by nested Forms. Clipping fixtures
+distinguish fully contained rectangular text, clipped glyphs and complex paths,
+and verify rollback when an edit crosses the clip boundary. FreeText fixtures
+with missing appearance streams exercise recovery and paired page-move history.
+High-precision content checks preserve untouched operator bytes and independent
+rendering after a text edit.
 
 `encrypted.pdf` uses fixture passwords test-user/test-owner.
 `signature-marker.pdf` tests field detection, not cryptographic signatures.

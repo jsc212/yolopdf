@@ -55,6 +55,8 @@ QString annotationType(engine::AnnotationType t) {
         return "Arrow";
     case engine::AnnotationType::Rectangle:
         return "Rectangle";
+    case engine::AnnotationType::FreeText:
+        return "Text annotation";
     default:
         return "Annotation";
     }
@@ -333,7 +335,11 @@ WorkerResult DocumentWorker::undo(const QString &id, bool redo) {
     const auto h = s.document->history();
     if ((redo && h.position >= h.steps) || (!redo && h.position == 0))
         return snapshot();
-    int state = s.states[redo ? h.position + 1 : h.position];
+    const int atState = redo ? h.position + 1 : h.position;
+    if (atState >= int(s.states.size()))
+        throw std::runtime_error(
+            "Document history changed unexpectedly; save a copy before undoing");
+    int state = s.states[atState];
     auto paired = composites_.find(state);
     Session *other = nullptr;
     if (paired != composites_.end()) {

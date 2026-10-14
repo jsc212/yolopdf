@@ -15,6 +15,76 @@
 class WorkflowTest final : public QObject {
     Q_OBJECT
   private slots:
+    void dragHighlightAndTextApplyUseTheVisibleSelection() {
+        QTemporaryDir dir;
+        QQmlApplicationEngine engine;
+        auto *provider = new PageImageProvider;
+        engine.addImageProvider("pages", provider);
+        DocumentController controller(provider);
+        yolo::core::AssetLibrary library(dir.filePath("library"));
+        yolo::core::DropRouter drops;
+        engine.rootContext()->setContextProperty("documentController", &controller);
+        engine.rootContext()->setContextProperty("assetLibrary", &library);
+        engine.rootContext()->setContextProperty("dropRouter", &drops);
+        engine.load(QUrl::fromLocalFile(QString(YOLOPDF_SOURCE_DIR) + "/src/ui/qml/Main.qml"));
+        QVERIFY(!engine.rootObjects().empty());
+        auto *window = qobject_cast<QQuickWindow *>(engine.rootObjects().front());
+        QVERIFY(window);
+        controller.openPdf(
+            QUrl::fromLocalFile(QString(YOLOPDF_CORPUS_DIR) + "/rectangular-clip.pdf"));
+        QTRY_VERIFY_WITH_TIMEOUT(controller.hasDocument() && !controller.busy(), 10000);
+        std::function<QQuickItem *(QQuickItem *)> find = [&](auto *item) -> QQuickItem * {
+            if (item->objectName() == "pagePointer")
+                return item;
+            for (auto *child : item->childItems())
+                if (auto *found = find(child))
+                    return found;
+            return nullptr;
+        };
+        QTRY_VERIFY(find(window->contentItem()) != nullptr);
+        auto run = controller.document()["runs"].toList().front().toMap();
+        auto point = [&](double x, double y) {
+            auto *p = find(window->contentItem());
+            return p->mapToScene(QPointF(x * p->width() / 300, y * p->width() / 300)).toPoint();
+        };
+        const double x = run["x"].toDouble(),
+                     y = run["y"].toDouble() + run["height"].toDouble() / 2,
+                     width = run["width"].toDouble();
+        window->setProperty("tool", "Annotate");
+        window->setProperty("annotationMode", "Highlight");
+        QTest::qWait(50);
+        QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, point(x + width * .1, y));
+        QTest::mouseMove(window, point(x + width * .6, y), 20);
+        QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, point(x + width * .6, y));
+        QTRY_COMPARE(controller.document()["annotations"].toList().size(), 1);
+        QVERIFY(controller.document()["annotations"].toList()[0].toMap()["width"].toDouble() <
+                width * .9);
+        controller.undo();
+        QTRY_VERIFY(!controller.busy());
+        window->setProperty("tool", "Edit text");
+        QTest::qWait(50);
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point(x + width * .5, y));
+        auto *editor = window->findChild<QQuickItem *>("textEditor");
+        auto *popup = window->findChild<QObject *>("textEditPopup");
+        QVERIFY(editor && popup);
+        QTRY_VERIFY(popup->property("opened").toBool());
+        editor->setProperty("text", QString("Ω"));
+        QTest::keyClick(window, Qt::Key_Return);
+        QTRY_VERIFY(!controller.busy());
+        QVERIFY(!controller.error().isEmpty());
+        QVERIFY(popup->property("opened").toBool());
+        QCOMPARE(editor->property("text").toString(), QString("Ω"));
+        QVERIFY(!controller.document()["dirty"].toBool());
+        editor->setProperty("text", "Hi");
+        QTest::keyClick(window, Qt::Key_Return);
+        QTRY_VERIFY(!controller.busy());
+        QTRY_VERIFY(!popup->property("opened").toBool());
+        QCOMPARE(controller.document()["runs"].toList()[0].toMap()["text"].toString(),
+                 QString("Hi"));
+        window->setProperty("allowQuit", true);
+        window->close();
+        delete window;
+    }
     void passwordPromptKeepsBatchOpenOrder() {
         PageImageProvider provider;
         DocumentController controller(&provider);

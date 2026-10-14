@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cmath>
 #include <set>
+#include <utility>
 using namespace yolo;
 namespace {
 std::vector<int> indices(const QVariantList &v) {
@@ -203,6 +204,8 @@ void DocumentController::submit(Job job, QString event) {
                                 Qt::QueuedConnection);
                     } else if (actual == "saved")
                         emit s->saved(result.error.isEmpty());
+                    else if (actual == "text-applied")
+                        emit s->textApplied(result.error.isEmpty());
                 },
                 Qt::QueuedConnection);
         },
@@ -322,7 +325,7 @@ void DocumentController::edit(std::function<void(engine::IDocument &)> action) {
     const auto tab = id();
     editJob([tab, action = std::move(action)](auto &w) { return w.change(tab, action); });
 }
-void DocumentController::editJob(Job job) {
+void DocumentController::editJob(Job job, QString completion) {
     cancelPreview();
     const auto tab = id();
     if (!hasDocument() || busy_)
@@ -330,18 +333,24 @@ void DocumentController::editJob(Job job) {
     if (!active_.value("mayEdit").toBool()) {
         error_ = "PDF permission restrictions disallow editing";
         emit changed();
+        if (completion == "text-applied")
+            emit textApplied(false);
         return;
     }
     if (active_.value("signed").toBool() && !signedApproved_.contains(tab)) {
         pendingEdit_ = job;
+        pendingCompletion_ = completion;
         emit signatureRequested();
         return;
     }
-    submit(std::move(job));
+    submit(std::move(job), completion);
 }
 void DocumentController::authorizeSignedEdits(bool allow) {
     if (!allow) {
         pendingEdit_ = {};
+        if (pendingCompletion_ == "text-applied")
+            emit textApplied(false);
+        pendingCompletion_.clear();
         return;
     }
     auto job = std::move(pendingEdit_);
@@ -350,10 +359,12 @@ void DocumentController::authorizeSignedEdits(bool allow) {
         return;
     const auto tab = id();
     signedApproved_.insert(tab);
-    submit([tab, job](auto &w) {
-        w.session(tab).document->allowSignedEdits(true);
-        return job(w);
-    });
+    submit(
+        [tab, job](auto &w) {
+            w.session(tab).document->allowSignedEdits(true);
+            return job(w);
+        },
+        std::exchange(pendingCompletion_, QString()));
 }
 void DocumentController::undo() {
     cancelPreview();
@@ -396,20 +407,22 @@ void DocumentController::copySelection(double x0, double y0, double x1, double y
 }
 void DocumentController::replaceText(int run, const QString &text, const QUrl &font, double size,
                                      bool overflow, int face, const QString &color, double wrap) {
-    edit([=, pg = page()](auto &doc) {
+    auto action = [=, pg = page()](auto &doc) {
         QString path;
         if (!font.isEmpty())
             path = asset(font, ".ttf");
         try {
             doc.replaceLine(pg, replacement(run, text, path, size, overflow, face, color, wrap));
         } catch (...) {
-            if (!font.isLocalFile())
+            if (!path.isEmpty() && !font.isLocalFile())
                 QFile::remove(path);
             throw;
         }
-        if (!font.isLocalFile())
+        if (!path.isEmpty() && !font.isLocalFile())
             QFile::remove(path);
-    });
+    };
+    editJob([tab = id(), action](auto &worker) { return worker.change(tab, action); },
+            "text-applied");
 }
 void DocumentController::previewText(int run, const QString &text, const QUrl &font, double size,
                                      bool overflow, int face, const QString &color, double wrap) {
@@ -457,11 +470,11 @@ void DocumentController::previewText(int run, const QString &text, const QUrl &f
                 value = core::image(w->session(tab).document->previewLine(
                     pg, replacement(run, text, path, size, overflow, face, color, wrap)));
             } catch (...) {
-                if (!font.isLocalFile())
+                if (!path.isEmpty() && !font.isLocalFile())
                     QFile::remove(path);
                 throw;
             }
-            if (!font.isLocalFile())
+            if (!path.isEmpty() && !font.isLocalFile())
                 QFile::remove(path);
         } catch (const std::exception &e) {
             error = QString::fromUtf8(e.what());
@@ -955,6 +968,17 @@ void DocumentController::markStroke(const QVariantList &points, double thickness
             s.points.push_back({p[0].toDouble(), p[1].toDouble()});
         }
         d.addAnnotation(pg, s);
+    });
+}
+void DocumentController::markText(const QString &type, double x0, double y0, double x1, double y1) {
+    edit([=, pg = page()](auto &doc) {
+        engine::AnnotationSpec spec;
+        spec.type = type == "Strikeout" ? engine::AnnotationType::Strikeout
+                                        : engine::AnnotationType::Highlight;
+        spec.bounds = {std::min(x0, x1), std::min(y0, y1), std::max(x0, x1) + .01,
+                       std::max(y0, y1) + .01};
+        spec.selection = {{x0, y0}, {x1, y1}};
+        doc.addAnnotation(pg, spec);
     });
 }
 void DocumentController::exportFlattened(const QUrl &destination) {

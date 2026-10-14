@@ -135,6 +135,12 @@ def stage1(destination, basic, nested):
     write_pdf(destination / "jpeg.pdf", jpeg_pdf)
     tj = list(basic); tj[4] = stream(b"BT /F1 18 Tf 24 TL 30 140 Td [(Hello) 100 ( yolopdf)] TJ ( NEXT) Tj (Quote one) ' 2 1 (Quote two) \" ET")
     write_pdf(destination / "positioned-text.pdf", tj)
+    precise = list(basic)
+    precise[4] = stream(b"BT /F1 18 Tf 30 140 Td (Hello yolopdf) Tj ET\n"
+                        b"% untouched high-precision operands\n"
+                        b"0.1234567890123456789 0.234567890123456789 0.34567890123456789 rg\n"
+                        b"BT /F1 12 Tf 1 0 0 1 30.123456789012345 60.987654321098765 Tm (Unchanged line) Tj ET")
+    write_pdf(destination / "precise-content.pdf", precise)
     mixed = list(basic)
     mixed[2] = b"<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R /F2 7 0 R >> >> /Contents 5 0 R >>"
     mixed[4] = stream(b"BT /F1 18 Tf 30 140 Td 1 0 0 rg (Hello ) Tj /F2 18 Tf 0 0 1 rg (World) Tj /F1 18 Tf 0 -40 Td 0 g (Unchanged line) Tj ET")
@@ -147,6 +153,24 @@ def stage1(destination, basic, nested):
     crossing[4] = stream(b"q /Span << /MCID 0 >> BDC")
     crossing.extend([stream(b"Q BT /F1 18 Tf 30 140 Td (Hello yolopdf) Tj ET"), stream(b"EMC")])
     write_pdf(destination / "marked-crossing-graphics.pdf", crossing)
+    free_text = b"<< /Type /Annot /Subtype /FreeText /Rect [30 80 160 100] /Contents (Original annotation) /DA (/Helv 12 Tf 0 g) /F 4 >>"
+    annotations = list(basic)
+    annotations[2] = annotations[2].replace(b"/Contents", b"/Annots [7 0 R] /Contents")
+    annotations.append(free_text)
+    write_pdf(destination / "existing-freetext.pdf", annotations)
+    annotated_pages = list(nested)
+    annotated_pages[2] = annotated_pages[2].replace(b"/Contents", b"/Annots [8 0 R] /Contents")
+    annotated_pages.append(free_text)
+    write_pdf(destination / "existing-freetext-pages.pdf", annotated_pages)
+    for name, clip, text, x in (
+        ("rectangular-clip", b"0 0 300 200 re W n", b"Hello yolopdf", 30),
+        ("partial-clip", b"20 100 80 80 re W n", b"Hello yolopdf", 30),
+        ("rectangular-edge-clip", b"0 0 130 200 re W n", b"Hi", 100),
+        ("complex-clip", b"0 0 m 300 0 l 150 200 l h W n", b"Hello yolopdf", 30),
+    ):
+        clipped = list(basic)
+        clipped[4] = stream(b"q " + clip + b" BT /F1 18 Tf " + str(x).encode() + b" 140 Td (" + text + b") Tj ET Q")
+        write_pdf(destination / (name + ".pdf"), clipped)
     for name, opening, closing in (
         ("actual-text-crossing-open", b"q /Span << /ActualText (Alternative text) >> BDC Q", b"EMC"),
         ("actual-text-crossing-close", b"/Span << /ActualText (Alternative text) >> BDC q", b"EMC Q"),

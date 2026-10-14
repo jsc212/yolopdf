@@ -136,7 +136,17 @@ struct AddTextSpec {
     double x{}, y{}, width{}, height{}, fontSize{12}; // Display points; y is baseline.
     std::array<double, 3> color{0, 0, 0};
 };
-enum class AnnotationType { Stamp, Highlight, Strikeout, Marker, Note, Arrow, Rectangle, Other };
+enum class AnnotationType {
+    Stamp,
+    Highlight,
+    Strikeout,
+    Marker,
+    Note,
+    Arrow,
+    Rectangle,
+    Other,
+    FreeText
+};
 using Point = std::array<double, 2>;
 struct AnnotationInfo {
     int id{};
@@ -151,8 +161,9 @@ struct AnnotationSpec {
     std::string contents;
     std::array<double, 3> color{1, .8, 0};
     double opacity{1};
-    std::vector<Point> points; // One marker stroke, in displayed physical points.
-    double thickness{8};       // Marker width in displayed physical points.
+    std::vector<Point> points;    // One marker stroke, in displayed physical points.
+    double thickness{8};          // Marker width in displayed physical points.
+    std::vector<Point> selection; // Highlight/strikeout anchor and cursor, if supplied.
 };
 struct ImageOccurrence {
     int id{};

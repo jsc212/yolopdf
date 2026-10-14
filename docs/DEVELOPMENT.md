@@ -136,8 +136,26 @@ Missing independent tools are failures. UI tests draw a marker, add a strikeout,
 undo/redo, move an image, preview imported fonts, open a password-protected batch,
 and save editable/flattened copies. See [PROGRESS.md](PROGRESS.md) for limitations.
 Windows omits Linux fontconfig, native replay and process-kill targets. Private PDF documents stay outside
-the checkout. One privately supplied receipt was used for local opening/rendering
-validation; its regression fixtures contain only original generated content.
+the checkout. The privately supplied receipt was also audited for editing,
+markings, page/image/stamp operations, recovery and printing; its regression
+fixtures contain only original generated content.
+
+The opt-in real-document runner is built with the desktop test targets, but is
+not a CTest test. Keep both the input and its outputs outside the checkout:
+
+```sh
+QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software build/linux/document-audit "/outside/receipt.pdf" /outside/audit
+python tests/engine/verify_document_audit.py "/outside/receipt.pdf" /outside/audit build/linux/yolopdf-cli
+```
+
+The runner exercises engine/core operations and actual QML pointer/keyboard
+interactions. It writes an `audit.json` report, verifies source hashes, and
+reopens/render-compares its output copies. The independent verifier checks each
+PDF with qpdf and PDFium, extracts with Poppler, checks replacement text and
+untouched-page pixels in both viewers, and confirms markings survive flattening
+and print conversion. Private outputs may contain document content. Unsupported
+features and cases absent from the source are reported separately. This audit
+does not validate a physical printer or Android/Windows platform integration.
 
 The cloud toolchain is installed outside the repository, with a test venv and
 writable font caches. Activate it in each new shell:

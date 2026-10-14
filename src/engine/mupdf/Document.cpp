@@ -241,6 +241,9 @@ class Document final : public IDocument {
             if (part.runId >= int(afterTrace->runs.size()))
                 throw Error(ErrorCode::UnsafeEdit, "Text segment disappeared");
             auto &run = afterTrace->runs[part.runId];
+            if (!part.text.empty() && !run.clipSafe)
+                throw Error(ErrorCode::UnsafeEdit,
+                            "Edited text would extend beyond its clipping region");
             auto m = fz_concat(run.start, mupdf::matrix(run.info.ctm));
             if (run.info.text != part.text ||
                 (!part.font.empty() && run.info.fontName != part.font) ||
@@ -371,6 +374,7 @@ class Document final : public IDocument {
                                  : type == PDF_ANNOT_TEXT       ? AnnotationType::Note
                                  : type == PDF_ANNOT_LINE       ? AnnotationType::Arrow
                                  : type == PDF_ANNOT_SQUARE     ? AnnotationType::Rectangle
+                                 : type == PDF_ANNOT_FREE_TEXT  ? AnnotationType::FreeText
                                                                 : AnnotationType::Other;
             auto *obj = call(ctx_, [&] { return pdf_annot_obj(ctx_, a); });
             result.push_back({objectNumber(ctx_, obj), own,
@@ -404,9 +408,20 @@ class Document final : public IDocument {
             auto text = structured(index);
             highlights.resize(2048);
             const auto r = mupdf::rect(spec.bounds);
+            fz_point start{r.x0, r.y0}, end{r.x1, r.y1};
+            if (!spec.selection.empty()) {
+                if (spec.selection.size() != 2)
+                    throw Error(ErrorCode::InvalidArgument,
+                                "Text markings need two selection points");
+                for (const auto &point : spec.selection)
+                    if (!std::isfinite(point[0]) || !std::isfinite(point[1]))
+                        throw Error(ErrorCode::InvalidArgument, "Invalid text selection point");
+                start = {float(spec.selection[0][0]), float(spec.selection[0][1])};
+                end = {float(spec.selection[1][0]), float(spec.selection[1][1])};
+            }
             const int n = call(ctx_, [&] {
-                return fz_highlight_selection(ctx_, text.get(), {r.x0, r.y0}, {r.x1, r.y1},
-                                              highlights.data(), highlights.size());
+                return fz_highlight_selection(ctx_, text.get(), start, end, highlights.data(),
+                                              highlights.size());
             });
             if (n == 0 || n >= int(highlights.size()))
                 throw Error(ErrorCode::Unsupported,
@@ -635,6 +650,9 @@ class Document final : public IDocument {
         if (replacement.runId >= int(afterTrace->runs.size()))
             throw Error(ErrorCode::UnsafeEdit, "Edited run disappeared");
         const auto &changed = afterTrace->runs[replacement.runId];
+        if (!replacement.text.empty() && !changed.clipSafe)
+            throw Error(ErrorCode::UnsafeEdit,
+                        "Edited text would extend beyond its clipping region");
         if (changed.info.text != replacement.text ||
             (replacement.fontFile.empty() && changed.info.fontName != original.info.fontName) ||
             std::abs(changed.start.e - original.start.e) > .01 ||

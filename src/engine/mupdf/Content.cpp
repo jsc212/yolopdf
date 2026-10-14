@@ -33,6 +33,9 @@ std::vector<int> codepoints(const std::string &value) {
     }
     return result;
 }
+bool axisAligned(fz_matrix m) {
+    return (m.b == 0 && m.c == 0) || (m.a == 0 && m.d == 0);
+}
 bool complexScript(int c) {
     const int category = ucdn_get_general_category(c), script = ucdn_get_script(c);
     if (category == UCDN_GENERAL_CATEGORY_MN || category == UCDN_GENERAL_CATEGORY_MC ||
@@ -63,7 +66,8 @@ struct Graphics {
     pdf_obj *gsFont{};
     std::string fontName;
     std::string fontResource;
-    bool clipped{};
+    bool complexClip{};
+    fz_rect clipBounds{fz_infinite_rect};
     std::string colorSpace{"DeviceGray"};
     std::vector<double> color{0};
     Graphics() { text.scale = 1; }
@@ -77,6 +81,8 @@ struct State {
     // Marked-content sequences are independent of the q/Q graphics-state stack.
     std::string markedReason;
     std::vector<std::string> markedStack;
+    bool pathPresent{}, rectangularPath{}, pendingClip{};
+    fz_rect pathBounds{fz_empty_rect};
     pdf_text_object_state tos{};
     std::vector<FormStep> forms;
     int showIndex{}, occurrence{};
@@ -211,6 +217,8 @@ void textShow(State &s, const char *bytes, std::size_t size, pdf_obj *array = nu
     } else
         showBytes(s, run, reinterpret_cast<const unsigned char *>(bytes), size);
     run.end = s.tos.tm;
+    run.clipSafe =
+        !s.graphics.complexClip && fz_contains_rect(s.graphics.clipBounds, rect(run.info.bounds));
     if (!run.font)
         run.info.reason = "No font";
     else if (!run.fontObject)
@@ -225,7 +233,8 @@ void textShow(State &s, const char *bytes, std::size_t size, pdf_obj *array = nu
         run.info.reason = "Type3 font";
     else if (run.info.renderMode >= 3)
         run.info.reason = "Invisible or clipping text render mode";
-    else if (s.graphics.clipped)
+    else if (s.graphics.complexClip ||
+             !fz_contains_rect(s.graphics.clipBounds, rect(run.info.bounds)))
         run.info.reason = "Text under a path clipping operation";
     else if (!s.markedReason.empty())
         run.info.reason = s.markedReason;
@@ -362,8 +371,39 @@ pdf_processor *newTracer(fz_context *ctx, State &s) {
             textShow(s, v, n);
         });
     };
-    p->op_W =
-        p->op_Wstar = [](fz_context *, pdf_processor *p) { state(p).graphics.clipped = true; };
+    p->op_m = p->op_l = [](fz_context *, pdf_processor *p, float, float) {
+        state(p).pathPresent = true;
+        state(p).rectangularPath = false;
+    };
+    p->op_c = [](fz_context *, pdf_processor *p, float, float, float, float, float, float) {
+        state(p).pathPresent = true;
+        state(p).rectangularPath = false;
+    };
+    p->op_v = p->op_y = [](fz_context *, pdf_processor *p, float, float, float, float) {
+        state(p).pathPresent = true;
+        state(p).rectangularPath = false;
+    };
+    p->op_re = [](fz_context *, pdf_processor *p, float x, float y, float w, float h) {
+        auto &s = state(p);
+        const auto m = s.graphics.ctm;
+        s.rectangularPath = !s.pathPresent && axisAligned(m);
+        s.pathPresent = true;
+        s.pathBounds = fz_transform_rect(
+            {std::min(x, x + w), std::min(y, y + h), std::max(x, x + w), std::max(y, y + h)}, m);
+    };
+    p->op_W = p->op_Wstar = [](fz_context *, pdf_processor *p) { state(p).pendingClip = true; };
+    auto endPath = [](fz_context *, pdf_processor *p) {
+        auto &s = state(p);
+        if (s.pendingClip) {
+            if (s.rectangularPath)
+                s.graphics.clipBounds = fz_intersect_rect(s.graphics.clipBounds, s.pathBounds);
+            else
+                s.graphics.complexClip = true;
+        }
+        s.pathPresent = s.rectangularPath = s.pendingClip = false;
+    };
+    p->op_n = p->op_S = p->op_s = p->op_F = p->op_f = p->op_fstar = p->op_B = p->op_Bstar =
+        p->op_b = p->op_bstar = endPath;
     p->op_BMC = [](fz_context *c, pdf_processor *p, const char *) {
         callback(c, [&] {
             auto &s = state(p);
@@ -440,6 +480,15 @@ pdf_processor *newTracer(fz_context *ctx, State &s) {
             if (transform)
                 child.graphics.ctm = fz_concat(
                     checked(c, [&] { return pdf_to_matrix(c, transform); }), child.graphics.ctm);
+            if (auto *box = get(c, form, "BBox")) {
+                if (axisAligned(child.graphics.ctm))
+                    child.graphics.clipBounds = fz_intersect_rect(
+                        child.graphics.clipBounds,
+                        fz_transform_rect(checked(c, [&] { return pdf_to_rect(c, box); }),
+                                          child.graphics.ctm));
+                else
+                    child.graphics.complexClip = true;
+            }
             auto *resources = get(c, form, "Resources");
             if (!resources && p->rstack)
                 resources = p->rstack->resources;
@@ -728,7 +777,140 @@ fz_buffer *rewriteStream(Rewrite &e, pdf_obj *resources, pdf_obj *contents) {
     });
     return fz_keep_buffer(e.ctx, buffer.get());
 }
+// Preserve untouched operator bytes. Canonicalizing an entire page rounds PDF
+// numbers to MuPDF floats and can move unrelated glyphs in double-precision viewers.
+bool patchDirectOperator(fz_context *ctx, pdf_document *doc, int page, Rewrite &e,
+                         pdf_obj *resources) {
+    if (!e.forms->empty())
+        return false;
+    auto *obj = pageObject(ctx, doc, page);
+    auto *contents = get(ctx, obj, "Contents");
+    const bool array = checked(ctx, [&] { return pdf_is_array(ctx, contents); });
+    const int count = array ? checked(ctx, [&] { return pdf_array_len(ctx, contents); }) : 1;
+    int show = 0, occurrence = 0;
+    for (int index = 0; index < count; ++index) {
+        auto *stream =
+            array ? checked(ctx, [&] { return pdf_array_get(ctx, contents, index); }) : contents;
+        Buffer original(ctx, checked(ctx, [&] { return pdf_load_stream(ctx, stream); }));
+        Ref<fz_stream, fz_drop_stream> input(
+            ctx, checked(ctx, [&] { return fz_open_buffer(ctx, original.get()); }));
+        struct Lexer {
+            fz_context *ctx;
+            pdf_lexbuf buffer;
+            Lexer(fz_context *c) : ctx(c) { pdf_lexbuf_init(ctx, &buffer, PDF_LEXBUF_SMALL); }
+            ~Lexer() { pdf_lexbuf_fin(ctx, &buffer); }
+        } lexer(ctx);
+        int depth = 0;
+        std::int64_t start = -1;
+        bool strings = false;
+        std::string name;
+        std::vector<float> numbers;
+        while (true) {
+            const auto at = checked(ctx, [&] { return fz_tell(ctx, input.get()); });
+            const auto token =
+                checked(ctx, [&] { return pdf_lex(ctx, input.get(), &lexer.buffer); });
+            if (token == PDF_TOK_EOF)
+                break;
+            if (start < 0)
+                start = at;
+            if (token == PDF_TOK_OPEN_ARRAY || token == PDF_TOK_OPEN_DICT) {
+                ++depth;
+                continue;
+            }
+            if (token == PDF_TOK_CLOSE_ARRAY || token == PDF_TOK_CLOSE_DICT) {
+                --depth;
+                continue;
+            }
+            if (token == PDF_TOK_STRING)
+                strings = true;
+            if (depth == 0 && token == PDF_TOK_INT)
+                numbers.push_back(float(lexer.buffer.i));
+            if (depth == 0 && token == PDF_TOK_REAL)
+                numbers.push_back(lexer.buffer.f);
+            if (token == PDF_TOK_NAME && depth == 0)
+                name = lexer.buffer.scratch;
+            if (token != PDF_TOK_KEYWORD || depth != 0)
+                continue;
+            const std::string op = lexer.buffer.scratch;
+            if (op == "BI")
+                return false; // Encoded inline image data requires the interpreter.
+            bool selected = false;
+            if (op == "Tj" || op == "TJ" || op == "'" || op == "\"") {
+                if (op != "TJ" || strings)
+                    selected = show++ == e.targetShow;
+            } else if (op == "Do") {
+                auto *xobject = get(ctx, get(ctx, resources, "XObject"), name.c_str());
+                const auto type = objectName(ctx, get(ctx, xobject, "Subtype"));
+                if (type == "Image" || type == "Form")
+                    selected = occurrence++ == e.targetImage;
+            }
+            if (selected) {
+                Buffer replacement(ctx, checked(ctx, [&] { return fz_new_buffer(ctx, 256); }));
+                Processor out(ctx, checked(ctx, [&] {
+                                  return pdf_new_buffer_processor(ctx, replacement.get(), 1, 1);
+                              }));
+                Rewrite local = e;
+                local.show = 0;
+                local.occurrence = 0;
+                local.targetShow = 0;
+                local.targetImage = 0;
+                Processor proxy(ctx,
+                                checked(ctx, [&] { return newRewriter(ctx, local, out.get()); }));
+                if (op == "Do") {
+                    checked(ctx, [&] {
+                        proxy.get()->op_Do_image(ctx, proxy.get(), name.c_str(), nullptr);
+                    });
+                } else {
+                    if (op == "\"" && numbers.size() != 2)
+                        return false;
+                    forwardText(ctx, proxy.get(), nullptr, 0, e.replacementArray,
+                                op == "\""  ? 2
+                                : op == "'" ? 1
+                                            : 0,
+                                op == "\"" ? numbers[0] : 0, op == "\"" ? numbers[1] : 0);
+                }
+                checked(ctx, [&] { pdf_close_processor(ctx, proxy.get()); });
+                if (!local.matched)
+                    throw Error(ErrorCode::UnsafeEdit,
+                                "Selected content occurrence no longer exists");
+                unsigned char *data;
+                const auto size =
+                    checked(ctx, [&] { return fz_buffer_storage(ctx, original.get(), &data); });
+                const auto end = checked(ctx, [&] { return fz_tell(ctx, input.get()); });
+                Buffer patched(ctx, checked(ctx, [&] { return fz_new_buffer(ctx, size + 256); }));
+                checked(ctx, [&] {
+                    fz_append_data(ctx, patched.get(), data, start);
+                    fz_append_string(ctx, patched.get(), "\n");
+                    fz_append_buffer(ctx, patched.get(), replacement.get());
+                    fz_append_string(ctx, patched.get(), "\n");
+                    fz_append_data(ctx, patched.get(), data + end, size - end);
+                });
+                Object changed(ctx, checked(ctx, [&] {
+                                   return pdf_add_stream(ctx, doc, patched.get(), nullptr, 0);
+                               }));
+                if (array) {
+                    Object copied(ctx, checked(ctx, [&] { return pdf_copy_array(ctx, contents); }));
+                    checked(ctx, [&] { pdf_array_put(ctx, copied.get(), index, changed.get()); });
+                    put(ctx, obj, "Contents", copied.get());
+                } else
+                    put(ctx, obj, "Contents", changed.get());
+                put(ctx, obj, "Resources", resources);
+                e.matched = local.matched;
+                return e.matched;
+            }
+            start = -1;
+            strings = false;
+            name.clear();
+            numbers.clear();
+        }
+        if (depth || start >= 0)
+            return false; // Operands spanning streams use the interpreter.
+    }
+    return false;
+}
 void updatePage(fz_context *ctx, pdf_document *doc, int page, Rewrite &e, pdf_obj *resources) {
+    if (patchDirectOperator(ctx, doc, page, e, resources))
+        return;
     auto *obj = pageObject(ctx, doc, page);
     e.resources = resources;
     Buffer buffer(ctx, rewriteStream(e, resources, get(ctx, obj, "Contents")));

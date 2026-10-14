@@ -45,8 +45,9 @@ inline-image tracing are available through `images`.
 
 ## Markings and printing
 
-Choose **Annotate** to highlight text, strike it out, or draw a translucent marker
-stroke. Markings are PDF annotations with saved appearances and print flags.
+Choose **Highlight** or **Strikeout**, then drag across words or click a line.
+Choose **Marker** to draw a translucent stroke. Markings are PDF annotations with
+saved appearances and print flags.
 **Print** includes them. **Save flattened copy** turns them into page content
 while keeping text searchable and retaining the editable original.
 

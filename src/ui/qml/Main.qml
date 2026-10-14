@@ -42,6 +42,16 @@ ApplicationWindow {
     property point stampPointer: Qt.point(0,0)
     property var markerPoints: []
     property string annotationMode: "Highlight"
+    property string toolNotice: ""
+    onToolChanged:{toolNotice="";area=null}
+    function applyTextEdit() {
+        if(documentController.busy || textPopup.applying)return
+        if(textPopup.run.status!=="Original" && textPopup.fontFile==="")return
+        textPopup.applying=true;previewTimer.stop()
+        documentController.replaceText(textPopup.run.id,editor.text,textPopup.fontFile,textPopup.sizeChanged?parseFloat(editSize.text):0,allowWider.checked,textPopup.face,editColor.text,wrapText.checked?parseFloat(wrapWidthMm.text)*72/25.4:0)
+    }
+    function textAt(x,y) {for(let run of doc.runs||[])if(x>=run.x&&x<=run.x+run.width&&y>=run.y&&y<=run.y+run.height)return run;return null}
+    function copySelectedText() {if(area)documentController.copySelection(area.x0===undefined?area.x:area.x0,area.y0===undefined?area.y:area.y0,area.x1===undefined?area.x+area.width:area.x1,area.y1===undefined?area.y+area.height:area.y1)}
     property real markerWidth: 8
     property string markerColor: "#ffd234"
     property real markerOpacity: .4
@@ -100,7 +110,7 @@ ApplicationWindow {
     }
     function editRun(run,pageItem,scale) {
         pickObject("Text",run)
-        if(run.status==="Unsupported")return
+        if(run.status==="Unsupported"){toolNotice=run.reason||"This text cannot be edited safely.";return}
         textPopup.run=run; textPopup.fontFile=""; textPopup.face=0; textPopup.sizeChanged=false;textPopup.fontStatus="Original fonts and styles"
         editor.text=run.text; editSize.text=String(run.size);editColor.text="";allowWider.checked=false;wrapText.checked=false;wrapWidthMm.text=(run.width*25.4/72).toFixed(2)
         let p=pageItem.mapToItem(window.contentItem,run.x*scale,run.y*scale)
@@ -120,6 +130,7 @@ ApplicationWindow {
     Shortcut {sequences: [StandardKey.SaveAs];enabled:documentController.hasDocument;onActivated:saveDialog.open()}
     Shortcut {sequences: [StandardKey.Undo];enabled:!!doc.canUndo&&!documentController.busy&&!textPopup.opened;onActivated:documentController.undo()}
     Shortcut {sequences: [StandardKey.Redo];enabled:!!doc.canRedo&&!documentController.busy&&!textPopup.opened;onActivated:documentController.redo()}
+    Shortcut {sequences:[StandardKey.Copy];enabled:tool==="Select"&&area!==null&&area.width>1&&!!doc.mayCopy&&!textPopup.opened;onActivated:window.copySelectedText()}
     Shortcut {sequences: [StandardKey.Close];enabled:documentController.hasDocument;onActivated:documentController.closeTab(doc.id)}
     Shortcut {sequences: [StandardKey.Find];onActivated:searchField.forceActiveFocus()}
     Shortcut {sequence:"Escape";onActivated:{textPopup.close();documentController.cancelPreview();tool="Select";window.pickObject("",null);objectBrowser=false;markerPoints=[];area=null}}
@@ -142,6 +153,7 @@ ApplicationWindow {
         }
         function onPasswordRequired(source) {sourceToOpen=source;passwordField.clear();passwordDialog.open()}
         function onInstalledFontFound(file,face) {textPopup.fontFile=file;textPopup.face=face;textPopup.fontStatus="Installed exact match";previewTimer.restart()}
+        function onTextApplied(success) {textPopup.applying=false;if(success)textPopup.close()}
         function onSignatureRequested() {signatureDialog.open()}
         function onCloseRequested(id) {tabToClose=id;closeDialog.open()}
         function onSaved(ok) {if(ok&&closeAfterSave){closeAfterSave=false;documentController.closeTab(tabToClose)}}
@@ -189,8 +201,8 @@ ApplicationWindow {
         Flickable {
             Layout.fillWidth:true;Layout.preferredHeight:48;contentWidth:modes.width;clip:true
             Row {id:modes;spacing:4
-                Repeater {model:["Select","Edit text","Add text","Image","Stamp","Annotate"]
-                    delegate:Button {implicitHeight:mobile?48:32;required property string modelData;text:modelData;height:48;checkable:true;checked:tool===modelData;Accessible.name:modelData+" tool";onClicked:{tool=modelData;if(modelData==="Stamp"&&stampArtwork===""){if(assetLibrary.stamps.length)collectionDialog.open();else stampDialog.open()};if(modelData==="Add text"&&textFont==="")addFontDialog.open()}}
+                Repeater {model:["Select","Edit text","Highlight","Strikeout","Marker","Add text","Image","Stamp","Annotate"]
+                    delegate:Button {implicitHeight:mobile?48:32;required property string modelData;text:modelData;height:48;checkable:true;checked:["Highlight","Strikeout","Marker"].indexOf(modelData)>=0?tool==="Annotate"&&annotationMode===modelData:tool===modelData&&(modelData!=="Annotate"||["Highlight","Strikeout","Marker"].indexOf(annotationMode)<0);Accessible.name:modelData+" tool";onClicked:{if(["Highlight","Strikeout","Marker"].indexOf(modelData)>=0){tool="Annotate";annotationMode=modelData}else{tool=modelData;if(modelData==="Annotate")annotationMode="Note"};if(modelData==="Stamp"&&stampArtwork===""){if(assetLibrary.stamps.length)collectionDialog.open();else stampDialog.open()};if(modelData==="Add text"&&textFont==="")addFontDialog.open()}}
                 }
             }
         }
@@ -210,6 +222,7 @@ ApplicationWindow {
             Label {id:errorMessage;anchors.fill:parent;anchors.margins:8;text:documentController.error||assetLibrary.error;color:darkTheme?"#fff0ee":"#852a22";wrapMode:Text.Wrap;Accessible.name:text}
         }
         Label {Layout.fillWidth:true;Layout.margins:8;visible:(doc.warnings||[]).length>0;text:(doc.warnings||[]).join("\n");wrapMode:Text.Wrap;color:darkTheme?"#f9db83":"#704e00"}
+        Label {Layout.fillWidth:true;Layout.leftMargin:8;Layout.rightMargin:8;visible:documentController.hasDocument;wrapMode:Text.Wrap;text:toolNotice|| (tool==="Edit text"?"Click text to edit. Enter or Apply saves the change; Escape cancels.":tool==="Annotate"&&(annotationMode==="Highlight"||annotationMode==="Strikeout")?"Drag across words to mark them, or click a line. Undo removes the last mark.":tool==="Annotate"&&annotationMode==="Marker"?"Drag to draw a translucent marker stroke.":tool==="Select"?"Drag across text to select it, then Copy. Click an image or marking to select it.":tool==="Image"&&!(doc.images||[]).length?"No image objects on this page. Choose Select area to copy vector artwork, or Insert image.":tool==="Stamp"?"Choose a stamp, then click to place it. Escape finishes.":tool==="Add text"?"Click where new text should start, then enter your text.":"")}
         RowLayout {
             Layout.fillWidth:true;Layout.preferredHeight:48;visible:documentController.hasDocument;spacing:6
             TextField {implicitHeight:mobile?48:32;id:searchField;Layout.fillWidth:true;Layout.maximumWidth:300;placeholderText:"Find text";Accessible.name:"Find text";onAccepted:{searchIndex=-1;documentController.search(text)}}
@@ -331,10 +344,16 @@ ApplicationWindow {
                                 delegate:Rectangle {required property var modelData;x:modelData.x*pageDelegate.scale;y:modelData.y*pageDelegate.scale;width:Math.max(6,modelData.width*pageDelegate.scale);height:Math.max(6,modelData.height*pageDelegate.scale)
                                     color:textMouse.containsMouse?(modelData.status==="Unsupported"?"#66dc5555":modelData.status==="Needs font"?"#66e5a531":"#55346bdb"):"transparent"
                                     border.color:(textMouse.containsMouse||activeFocus)?window.palette.highlight:"transparent";z:3
-                                    MouseArea {id:textMouse;anchors.fill:parent;hoverEnabled:true;onClicked:{if(tool==="Annotate"&&annotationMode!=="Marker")documentController.annotate(annotationMode,modelData.x,modelData.y,modelData.width,modelData.height);else window.editRun(modelData,paper,pageDelegate.scale)}}
+                                    MouseArea {id:textMouse;anchors.fill:parent;hoverEnabled:true;enabled:tool==="Edit text";onClicked:window.editRun(modelData,paper,pageDelegate.scale)}
                                     activeFocusOnTab:true;Accessible.role:Accessible.Button;Accessible.name:modelData.text+" · "+modelData.status
-                                    Keys.onReturnPressed:{if(tool==="Annotate")documentController.annotate(annotationMode,modelData.x,modelData.y,modelData.width,modelData.height);else window.editRun(modelData,paper,pageDelegate.scale)}
+                                    Keys.onReturnPressed:{if(tool==="Annotate")documentController.markText(annotationMode,modelData.x,modelData.y+modelData.height/2,modelData.x+modelData.width,modelData.y+modelData.height/2);else window.editRun(modelData,paper,pageDelegate.scale)}
                                     ToolTip.visible:textMouse.containsMouse;ToolTip.text:modelData.status+(modelData.reason?": "+modelData.reason:" · "+modelData.font)
+                                }
+                            }
+                            Repeater {model:pageDelegate.index===doc.page&&tool==="Edit text"?(doc.annotations||[]).filter(a=>a.type==="Text annotation"):[]
+                                delegate:Rectangle {required property var modelData;x:modelData.x*pageDelegate.scale;y:modelData.y*pageDelegate.scale;width:modelData.width*pageDelegate.scale;height:modelData.height*pageDelegate.scale;color:"transparent";border.color:annotationTextMouse.containsMouse?"#d59424":"transparent";z:4
+                                    MouseArea {id:annotationTextMouse;anchors.fill:parent;hoverEnabled:true;onClicked:{window.pickObject("Annotation",modelData);toolNotice="This is an existing text annotation. Editing its text while preserving its font is not supported yet."}}
+                                    ToolTip.visible:annotationTextMouse.containsMouse;ToolTip.text:"Existing text annotation · font-preserving editing is not supported"
                                 }
                             }
                             Rectangle {visible:selectedObject!==null&&pageDelegate.index===doc.page;x:(selectedObject?selectedObject.x:0)*pageDelegate.scale;y:(selectedObject?selectedObject.y:0)*pageDelegate.scale;width:(selectedObject?selectedObject.width:0)*pageDelegate.scale;height:(selectedObject?selectedObject.height:0)*pageDelegate.scale;color:"transparent";border.color:"#346bdb";border.width:2;z:4
@@ -369,7 +388,7 @@ ApplicationWindow {
                                         let images=doc.images||[],annots=doc.annotations||[]
                                         for(let i=annots.length-1;i>=0;--i){let a=annots[i];if(start.x>=a.x&&start.x<=a.x+a.width&&start.y>=a.y&&start.y<=a.y+a.height){chosen=a;kind="Annotation";break}}
                                         if(!chosen)for(let i=images.length-1;i>=0;--i){let a=images[i];if(start.x>=a.x&&start.x<=a.x+a.width&&start.y>=a.y&&start.y<=a.y+a.height){chosen=a;kind="Image";break}}
-                                        window.pickObject(kind,chosen);original=chosen;moving=chosen!==null&&window.canMoveObject();area=null
+                                        window.pickObject(kind,chosen);original=chosen;moving=chosen!==null&&window.canMoveObject();area=moving?null:{x:start.x,y:start.y,width:0,height:0}
                                     } else if(tool!=="Stamp"&&tool!=="Add text")area={x:start.x,y:start.y,width:0,height:0}
                                 }
                                 onPositionChanged:function(mouse){
@@ -379,7 +398,7 @@ ApplicationWindow {
                                         let last=markerPoints[markerPoints.length-1];if(last&&Math.hypot(x-last[0],y-last[1])>=.25&&markerPoints.length<4096)markerPoints=markerPoints.concat([[x,y]]);markerPreview.requestPaint()
                                     }
                                     else if(pressed&&moving&&original){selectedObject=Object.assign({},original,{x:window.snap(original.x+x-start.x,"x",modelData),y:window.snap(original.y+y-start.y,"y",modelData)})}
-                                    else if(pressed&&area)area={x:Math.min(start.x,x),y:Math.min(start.y,y),width:Math.abs(x-start.x),height:Math.abs(y-start.y)}
+                                    else if(pressed&&area)area={x:Math.min(start.x,x),y:Math.min(start.y,y),width:Math.abs(x-start.x),height:Math.abs(y-start.y),x0:start.x,y0:start.y,x1:x,y1:y}
                                 }
                                 onReleased:function(mouse){
                                     if(pageDelegate.index!==doc.page)return
@@ -391,6 +410,11 @@ ApplicationWindow {
                                     else if(moving&&original&&selectedObject&&(Math.abs(x-start.x)+Math.abs(y-start.y)>1)){let changed=selectedObject;selectedObject=original;window.moveObject(changed.x,changed.y,changed.width,changed.height)}
                                     else if(tool==="Stamp"&&stampArtwork!=="")documentController.placeStamp(stampArtwork,stampPointer.x*25.4/72,stampPointer.y*25.4/72,stampWidth,stampHeight,stampRotation,stampOpacity,stampFrame)
                                     else if(tool==="Add text"){newTextX.text=(x*25.4/72).toFixed(2);newTextY.text=(y*25.4/72).toFixed(2);addTextDialog.open()}
+                                    else if(tool==="Annotate"&&(annotationMode==="Highlight"||annotationMode==="Strikeout")) {
+                                        if(Math.hypot(x-start.x,y-start.y)>1)documentController.markText(annotationMode,start.x,start.y,x,y)
+                                        else {let run=window.textAt(x,y);if(run)documentController.markText(annotationMode,run.x,run.y+run.height/2,run.x+run.width,run.y+run.height/2);else toolNotice="Drag across visible text to mark it."}
+                                        area=null
+                                    }
                                     else if(tool==="Annotate"&&area&&area.width>1&&area.height>1)documentController.annotate(annotationMode,area.x,area.y,area.width,area.height,noteField.text)
                                     moving=false;original=null
                                 }
@@ -458,12 +482,12 @@ ApplicationWindow {
                         Button {implicitHeight:mobile?48:32;text:"Rotate 90°";Accessible.name:text;onClicked:documentController.rotateStamp(selectedObject.id,90)}
                         Button {implicitHeight:mobile?48:32;text:"Duplicate";Accessible.name:"Duplicate stamp";onClicked:documentController.duplicateStamp(selectedObject.id)}
                     }
-                    Slider {visible:selectedObject!==null&&selectionKind==="Annotation";from:0;to:1;value:selectedObject?selectedObject.opacity:1;Accessible.name:"Annotation opacity";onMoved:if(!documentController.busy)documentController.annotationOpacity(selectedObject.id,value)}
+                    Slider {visible:selectedObject!==null&&selectionKind==="Annotation";from:0;to:1;value:selectedObject&&selectedObject.opacity!==undefined?selectedObject.opacity:1;Accessible.name:"Annotation opacity";onMoved:if(!documentController.busy)documentController.annotationOpacity(selectedObject.id,value)}
                     CheckBox {implicitHeight:mobile?48:32;text:"Snap to guides";checked:snapping;Accessible.name:text;onToggled:snapping=checked}
                     ComboBox {implicitHeight:mobile?48:32;id:imageChoice;visible:tool==="Image";model:["Select image object","Select area"];Accessible.name:"Image selection mode"}
                     Button {implicitHeight:mobile?48:32;text:"Insert image…";visible:tool==="Image";Accessible.name:text;enabled:window.enabledEdit();onClicked:{imagePurpose="insert";imageDialog.open()}}
                     Button {implicitHeight:mobile?48:32;text:"Copy selected area";visible:area!==null;Accessible.name:text;enabled:!!doc.mayCopy&&!documentController.busy;onClicked:{if(area)documentController.copyArea(area.x,area.y,area.width,area.height)}}
-                    Button {implicitHeight:mobile?48:32;text:"Copy selected text";visible:area!==null;Accessible.name:text;enabled:!!doc.mayCopy&&!documentController.busy;onClicked:{if(area)documentController.copySelection(area.x,area.y,area.x+area.width,area.y+area.height)}}
+                    Button {implicitHeight:mobile?48:32;text:"Copy selected text";visible:area!==null;Accessible.name:text;enabled:!!doc.mayCopy&&!documentController.busy;onClicked:window.copySelectedText()}
                     Button {implicitHeight:mobile?48:32;text:"Paste image";visible:tool==="Image";Accessible.name:text;enabled:window.enabledEdit();onClicked:documentController.pasteImage(20,20,100,60)}
                     Button {implicitHeight:mobile?48:32;text:"Stamp collection…";visible:tool==="Stamp";Accessible.name:text;onClicked:collectionDialog.open()}
                     GridLayout {columns:2;visible:tool==="Stamp"
@@ -491,7 +515,8 @@ ApplicationWindow {
         }
     }
     Popup {
-        id:textPopup;width:Math.min(560,window.width-16);modal:false;closePolicy:Popup.CloseOnEscape
+        id:textPopup;objectName:"textEditPopup";width:Math.min(560,window.width-16);modal:false;closePolicy:Popup.CloseOnEscape
+        property bool applying:false
         property var run:({});property url fontFile:"";property int face:0;property bool sizeChanged:false;property string fontStatus:"Original fonts and styles"
         onClosed:{previewTimer.stop();documentController.cancelPreview()}
         contentItem:ColumnLayout {spacing:8
@@ -501,7 +526,7 @@ ApplicationWindow {
                 ColumnLayout {Layout.fillWidth:true;Label {text:"Original"} Image {source:documentController.comparisonOriginal;Layout.fillWidth:true;Layout.preferredHeight:100;fillMode:Image.PreserveAspectFit;Accessible.name:"Original font preview"}}
                 ColumnLayout {Layout.fillWidth:true;Label {text:"Selected font"} Image {source:documentController.comparisonEdited;Layout.fillWidth:true;Layout.preferredHeight:100;fillMode:Image.PreserveAspectFit;Accessible.name:"Explicit font replacement preview"}}
             }
-            TextField {implicitHeight:mobile?48:32;id:editor;Layout.fillWidth:true;Accessible.name:"Replacement text";font.family:(textPopup.run.font||"").replace(/^[A-Z]{6}\+/,"");font.pixelSize:18;onTextEdited:previewTimer.restart()}
+            TextField {implicitHeight:mobile?48:32;id:editor;objectName:"textEditor";Layout.fillWidth:true;Accessible.name:"Replacement text";font.family:(textPopup.run.font||"").replace(/^[A-Z]{6}\+/,"");font.pixelSize:18;onTextEdited:previewTimer.restart();onAccepted:window.applyTextEdit()}
             GridLayout {columns:mobile?2:4
                 Label {text:"Size (pt)"}
                 TextField {implicitHeight:mobile?48:32;id:editSize;Layout.preferredWidth:80;validator:DoubleValidator {bottom:1;top:1200} Accessible.name:"Font size in points";onTextEdited:{textPopup.sizeChanged=true;previewTimer.restart()}}
@@ -515,7 +540,7 @@ ApplicationWindow {
             TextField {implicitHeight:mobile?48:32;id:wrapWidthMm;visible:wrapText.checked;placeholderText:"Wrap width (mm)";Accessible.name:"Wrap width in millimetres";onTextEdited:previewTimer.restart()}
             RowLayout {Layout.alignment:Qt.AlignRight
                 Button {implicitHeight:mobile?48:32;text:"Cancel";Accessible.name:text;onClicked:textPopup.close()}
-                Button {implicitHeight:mobile?48:32;text:"Apply";Accessible.name:text;enabled:!documentController.busy&&(textPopup.run.status==="Original"||textPopup.fontFile!=="");onClicked:{documentController.replaceText(textPopup.run.id,editor.text,textPopup.fontFile,textPopup.sizeChanged?parseFloat(editSize.text):0,allowWider.checked,textPopup.face,editColor.text,wrapText.checked?parseFloat(wrapWidthMm.text)*72/25.4:0);textPopup.close()}}
+                Button {implicitHeight:mobile?48:32;objectName:"applyTextEdit";text:textPopup.applying?"Applying…":"Apply";Accessible.name:text;enabled:!documentController.busy&&!textPopup.applying&&(textPopup.run.status==="Original"||textPopup.fontFile!=="");onClicked:window.applyTextEdit()}
             }
         }
     }
@@ -532,7 +557,7 @@ ApplicationWindow {
             }
             Button {implicitHeight:mobile?48:32;text:"Apply position / size";visible:window.canMoveObject();Accessible.name:text;onClicked:window.moveObject(parseFloat(mobileX.text)*72/25.4,parseFloat(mobileY.text)*72/25.4,parseFloat(mobileW.text)*72/25.4,parseFloat(mobileH.text)*72/25.4)}
             Button {implicitHeight:mobile?48:32;text:"Rotate image 90°";visible:selectionKind==="Image"&&!!selectedObject;Accessible.name:text;onClicked:window.rotateImage()}
-            Slider {visible:selectionKind==="Annotation"&&!!selectedObject;from:0;to:1;value:selectedObject?selectedObject.opacity:1;Accessible.name:"Annotation opacity";onMoved:documentController.annotationOpacity(selectedObject.id,value)}
+            Slider {visible:selectionKind==="Annotation"&&!!selectedObject;from:0;to:1;value:selectedObject&&selectedObject.opacity!==undefined?selectedObject.opacity:1;Accessible.name:"Annotation opacity";onMoved:documentController.annotationOpacity(selectedObject.id,value)}
             Button {implicitHeight:mobile?48:32;text:"Duplicate stamp";visible:selectionKind==="Annotation"&&!!selectedObject&&selectedObject.type==="Stamp";Accessible.name:text;onClicked:documentController.duplicateStamp(selectedObject.id)}
             Button {implicitHeight:mobile?48:32;text:"Select image object";Accessible.name:text;onClicked:{tool="Image";imageChoice.currentIndex=0;mobileProperties.close()}}
             Button {implicitHeight:mobile?48:32;text:"Select area";Accessible.name:text;onClicked:{tool="Image";imageChoice.currentIndex=1;mobileProperties.close()}}

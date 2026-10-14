@@ -81,6 +81,31 @@ The original receipt opens in the app on offscreen and native Wayland backends,
 all four pages trace/render, and its source hash remains unchanged. The receipt
 and its contents are not committed.
 
+The receipt feature audit subsequently reproduced and fixed four further issues:
+fully contained text under a rectangular clip was rejected, text hit regions
+intercepted highlight drags, failed Apply closed the editor, and snapshot
+appearance generation inserted an extra journal step that broke paired undo.
+The UI now exposes Highlight/Strikeout/Marker directly, explains the active tool,
+accepts horizontal word selections, supports Enter to apply text and keeps failed
+edits open. Existing FreeText appearances are identified separately with an
+explicit editing limit. Safe clipping, pointer/keyboard editing, appearance
+generation and composite history have generated regressions.
+
+Independent comparison also exposed unrelated pixel changes after text export:
+rewriting entire content streams rounded their numeric operands. Direct page
+edits now splice only the selected operator, and existing-document saves use
+incremental snapshots to retain original objects. New/repaired documents retain
+the full-export path; nested/inline rewriting remains a separate limitation.
+The private receipt audit passes 32 checks (including safe-rejection checks),
+with 39 output PDFs checked by qpdf, PDFium rendering and Poppler extraction.
+Both independent viewers confirm replacement extraction, pixel-exact untouched
+content, flattened appearance and marker visibility in the print copy. All
+fifteen local CTest suites pass. The original remains byte-identical. Editing the
+existing FreeText appearance and duplicating tagged pages remain unsupported;
+there are no image occurrences in this receipt, so image operations are tested
+with generated artwork inserted into temporary copies. Physical printing and
+other platform integrations are not established by this local audit.
+
 Android native/Java compilation and arm64 APK/AAB/x86_64 APK creation pass.
 The native driver ran Latin-accent and CJK replacements on an API 29 emulator;
 both results passed qpdf and independent Poppler/PDFium text extraction.

@@ -28,6 +28,18 @@ def objects(path):
     return {key.removeprefix("obj:"): value.get("value", value.get("stream", {}).get("dict", {})) for key, value in table.items()}
 
 
+def active_annotations(path):
+    data = json.loads(run("qpdf", "--json", path).stdout)
+    table = objects(path)
+    result = []
+    for page in data["pages"]:
+        refs = table[page["object"]].get("/Annots", [])
+        if isinstance(refs, str):
+            refs = table[refs]
+        result.extend(table[ref] for ref in refs)
+    return result
+
+
 class Stage1Test(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -90,7 +102,9 @@ class Stage1Test(unittest.TestCase):
                                   ("subset-cjk.pdf", "日文"), ("subset-cff.pdf", "éè"), ("narrow-encoding.pdf", "Ω"),
                                   ("graphics-state-font.pdf", "Hi yolopdf"), ("rotated-text.pdf", "Hi yolopdf"),
                                   ("positioned-text.pdf", "Hi yolopdf"),
+                                  ("precise-content.pdf", "Hi yolopdf"),
                                   ("marked.pdf", "Hi"), ("marked-crossing-graphics.pdf", "Hi"),
+                                  ("rectangular-clip.pdf", "Hi yolopdf"),
                                   ("nested.pdf", "Text")):
             with self.subTest(fixture=name):
                 source = CORPUS / name
@@ -122,6 +136,22 @@ class Stage1Test(unittest.TestCase):
                         if name == "nested.pdf":
                             self.assertIsNone(ImageChops.difference(self.render(source, renderer, 1), self.render(output, renderer, 1)).getbbox())
                 self.assertEqual(hashlib.sha256(source.read_bytes()).digest(), original_hash)
+
+    def test_edit_preserves_original_bytes_and_untouched_operands(self):
+        source = CORPUS / "precise-content.pdf"
+        output = self.root / "precise-edited.pdf"
+        self.cli("replace-text", source, output, "--text", "Hi yolopdf")
+        self.assertTrue(output.read_bytes().startswith(source.read_bytes()))
+        data = json.loads(run("qpdf", "--json", output).stdout)
+        table = objects(output)
+        contents = table[data["pages"][0]["object"]]["/Contents"]
+        if isinstance(contents, list):
+            contents = contents[0]
+        result = run("qpdf", "--show-object=" + contents.split()[0], "--filtered-stream-data", output)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(b"% untouched high-precision operands", result.stdout)
+        self.assertIn(b"30.123456789012345 60.987654321098765 Tm", result.stdout)
+        self.assertIn(b"0.1234567890123456789 0.234567890123456789 0.34567890123456789 rg", result.stdout)
 
     def test_explicit_import_and_missing_glyphs(self):
         source = CORPUS / "subset-latin.pdf"
@@ -191,7 +221,9 @@ class Stage1Test(unittest.TestCase):
                     flat = self.root / "flattened.pdf"
                     self.cli("flatten-stamps", output, flat)
                     self.valid(flat)
-                    self.assertFalse(any(isinstance(value, dict) and value.get("/Subtype") == "/Stamp" for value in objects(flat).values()))
+                    # Incremental saves retain obsolete objects; only reachable
+                    # page annotations are interactive or rendered.
+                    self.assertFalse(any(value.get("/Subtype") == "/Stamp" for value in active_annotations(flat)))
                     for renderer in ("Poppler", "PDFium"):
                         before = self.render(output, renderer, page - 1)
                         after = self.render(flat, renderer, page - 1)

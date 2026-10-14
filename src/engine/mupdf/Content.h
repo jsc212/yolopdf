@@ -25,6 +25,7 @@ struct TracedRun {
     fz_matrix start{}, end{};
     fz_matrix lineMatrix{};
     double advance{};
+    bool clipSafe{true};
     std::vector<Glyph> glyphs;
 };
 struct TracedImage {

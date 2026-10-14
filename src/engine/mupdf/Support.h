@@ -93,13 +93,18 @@ void readJournal(fz_context *, pdf_document *, fz_stream *);
 // still refer to the live unsaved changes. All locals here are trivial.
 inline void writeSnapshot(fz_context *ctx, pdf_document *doc, fz_output *out) {
     const int incremental = doc->num_incremental_sections;
+    // Saving may materialize existing annotation appearances. Fold those
+    // housekeeping changes into the preceding edit rather than a new undo step.
+    pdf_begin_implicit_operation(ctx, doc);
     fz_try(ctx) {
         pdf_write_snapshot(ctx, doc, out);
+        pdf_end_operation(ctx, doc);
     }
     fz_always(ctx) {
         doc->num_incremental_sections = incremental;
     }
     fz_catch(ctx) {
+        pdf_abandon_operation(ctx, doc);
         fz_rethrow(ctx);
     }
 }

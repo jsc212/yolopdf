@@ -79,6 +79,21 @@ class SessionTest : public QObject {
         worker.undo(b);
         QCOMPARE(worker.session(a).document->inspect().pages.size(), std::size_t{2});
     }
+    void annotatedSourceSnapshotsDoNotAddUndoSteps() {
+        QTemporaryDir dir;
+        core::DocumentWorker worker(dir.filePath("recovery"));
+        worker.open(fixture("existing-freetext-pages.pdf"));
+        const auto a = worker.activeId;
+        worker.open(fixture("basic.pdf"));
+        const auto b = worker.activeId;
+        worker.transfer(a, b, {0}, 1, true);
+        QCOMPARE(worker.session(a).document->history().position, 1);
+        worker.undo(a);
+        QCOMPARE(worker.session(a).document->inspect().pages.size(), std::size_t{2});
+        QCOMPARE(worker.session(b).document->inspect().pages.size(), std::size_t{1});
+        worker.undo(b, true);
+        QCOMPARE(worker.session(a).document->inspect().pages.size(), std::size_t{1});
+    }
     void recoveryRestoresJournalAndProtectsChangedSource() {
         QTemporaryDir dir;
         const auto source = dir.filePath("original.pdf");

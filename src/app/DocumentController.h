@@ -105,6 +105,7 @@ class DocumentController final : public QObject {
     Q_INVOKABLE void flattenStamps();
     Q_INVOKABLE void markStroke(const QVariantList &, double thickness,
                                 const QString &color = "#ffd234", double opacity = .4);
+    Q_INVOKABLE void markText(const QString &type, double x0, double y0, double x1, double y1);
     Q_INVOKABLE void exportFlattened(const QUrl &);
     Q_INVOKABLE void insertPages(const QVariantList &, int, const QString &range = {});
     Q_INVOKABLE void deletePages(const QVariantList &);
@@ -131,6 +132,7 @@ class DocumentController final : public QObject {
     void closeRequested(QString id);
     void installedFontFound(QUrl file, int face);
     void previewFinished(bool);
+    void textApplied(bool);
     void imageCopied(QImage);
     void textCopied(QString);
 
@@ -139,7 +141,7 @@ class DocumentController final : public QObject {
     void submit(Job, QString event = {});
     void openNext();
     void edit(std::function<void(yolo::engine::IDocument &)>);
-    void editJob(Job);
+    void editJob(Job, QString completion = {});
     QString id() const { return active_.value("id").toString(); }
     int page() const { return active_.value("page").toInt(); }
     PageImageProvider *provider_;
@@ -154,6 +156,7 @@ class DocumentController final : public QObject {
     QString compareOriginalKey_, compareEditedKey_;
     QList<QUrl> openQueue_;
     Job pendingEdit_;
+    QString pendingCompletion_;
     QUrl pendingSource_;
     QString pendingRecovery_;
     QImage clipboardImage_;

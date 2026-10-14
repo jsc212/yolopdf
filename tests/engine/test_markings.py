@@ -26,6 +26,18 @@ def pdf_objects(path):
     return [v.get("value", v.get("stream", {}).get("dict", {})) for v in raw.values()]
 
 
+def active_annotations(path):
+    data = json.loads(command("qpdf", "--json", path))
+    table = data["qpdf"][1]
+    result = []
+    for page in data["pages"]:
+        refs = table["obj:" + page["object"]]["value"].get("/Annots", [])
+        if isinstance(refs, str):
+            refs = table["obj:" + refs]["value"]
+        result.extend(table["obj:" + ref]["value"] for ref in refs)
+    return result
+
+
 class MarkingsTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -71,7 +83,7 @@ class MarkingsTest(unittest.TestCase):
             args = bounds if kind != "marker" else ["--points", "30,110;70,105;110,110", "--thickness", "8", "--opacity", ".4"]
             command(CLI, "annotate", current, output, "--type", kind, *args)
             command("qpdf", "--check", output)
-            annots = [o for o in pdf_objects(output) if isinstance(o, dict) and o.get("/Type") == "/Annot"]
+            annots = active_annotations(output)
             self.assertEqual(len(annots), ("highlight", "strikeout", "marker").index(kind)+1)
             for annot in annots:
                 self.assertTrue(annot["/F"] & 4, "Annotation must have the Print flag")
@@ -84,7 +96,7 @@ class MarkingsTest(unittest.TestCase):
         flat = self.root / "flattened.pdf"
         command(CLI, "flatten-annotations", current, flat)
         command("qpdf", "--check", flat)
-        self.assertFalse(any(isinstance(o,dict) and o.get("/Type")=="/Annot" for o in pdf_objects(flat)))
+        self.assertFalse(active_annotations(flat))
         self.assertIn("Hello yolopdf", command("pdftotext", flat, "-").decode())
         for renderer in ("poppler", "pdfium"):
             marked, flattened = self.raster(current, renderer), self.raster(flat, renderer)

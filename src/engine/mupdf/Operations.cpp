@@ -491,8 +491,8 @@ void rearrange(fz_context *ctx, pdf_document *doc, const std::vector<int> &order
         }
         auto *source = pageObject(ctx, doc, index);
         if (get(ctx, source, "StructParents"))
-            throw Error(ErrorCode::Unsupported,
-                        "Duplicating a tagged page requires a new structure subtree");
+            throw Error(ErrorCode::Unsupported, "This tagged page cannot be duplicated safely yet; "
+                                                "its accessibility structure needs remapping");
         checked(ctx, [&] { pdf_flatten_inheritable_page_items(ctx, source); });
         Object copied(ctx, checked(ctx, [&] { return pdf_copy_dict(ctx, source); }));
         Object ref(ctx, checked(ctx, [&] { return pdf_add_object(ctx, doc, copied.get()); }));
@@ -535,8 +535,10 @@ void rearrange(fz_context *ctx, pdf_document *doc, const std::vector<int> &order
     }
 }
 std::vector<std::uint8_t> serialize(fz_context *ctx, pdf_document *doc) {
-    if (doc->crypt || isSigned(ctx, doc)) {
-        if (!checked(ctx, [&] { return pdf_can_be_saved_incrementally(ctx, doc); }))
+    const bool incremental = doc->file && doc->file_size > 0 &&
+                             checked(ctx, [&] { return pdf_can_be_saved_incrementally(ctx, doc); });
+    if (incremental || doc->crypt || isSigned(ctx, doc)) {
+        if (!incremental)
             throw Error(ErrorCode::Unsupported, "This protected PDF cannot be saved incrementally");
         Buffer bytes(ctx, checked(ctx, [&] { return fz_new_buffer(ctx, 4096); }));
         Ref<fz_output, fz_drop_output> out(
@@ -550,8 +552,9 @@ std::vector<std::uint8_t> serialize(fz_context *ctx, pdf_document *doc) {
         return {data, data + size};
     }
     const int expectedPages = checked(ctx, [&] { return pdf_count_pages(ctx, doc); });
-    // Save a reachable-object clone, so subsetting and garbage collection cannot
-    // alter the live document or its journal. Preserve the entire catalog graph.
+    // New/repaired documents need a full reachable-object clone. Existing PDFs
+    // use incremental snapshots above to preserve untouched object formatting,
+    // font programs and annotation appearances in independent viewers.
     Ref<pdf_document, pdf_drop_document> clone(
         ctx, checked(ctx, [&] { return pdf_create_document(ctx); }));
     Ref<pdf_graft_map, pdf_drop_graft_map> map(
