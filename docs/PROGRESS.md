@@ -62,12 +62,12 @@ native undo history are restored. Linux installed-layout smoke checks pass.
 A headless native Wayland check passes with Qt 6.8.2 and Weston 14 on Debian:
 the installed app renders a page, performs the sample engine edit and announces
 `org.yolopdf.app` as its Wayland app ID. The
-[native Fedora 43/44 CI run](https://github.com/jsc212/yolopdf/actions/runs/38505649682)
-passed both jobs with distribution Qt, the fourteen then-existing suites and
-installed native Wayland startup. A later exact-font regression adds a fifteenth
-suite: a strong desktop family alias must not hide an installed PostScript face,
-and an unmatched name must never return a substitute. Linux now uses `fc-list`
-instead of ranked `fc-match` results. All fifteen suites pass locally.
+[native Fedora 43/44 CI run](https://github.com/jsc212/yolopdf/actions/runs/38506641385)
+passed both jobs at commit `a2cd1a8`, with distribution Qt, all fifteen suites,
+installed desktop-file validation and native Wayland startup. The exact-font
+regression checks that a strong desktop family alias cannot hide an installed
+PostScript face and an unmatched name never returns a substitute. Linux uses
+`fc-list` instead of ranked `fc-match` results. All fifteen suites also pass locally.
 The separate local Fedora 44 container could not install packages because the
 cloud egress policy denied Fedora repository hosts; native CI supplied the
 distribution validation.
@@ -91,8 +91,10 @@ regressions before upgrading MuPDF. The upstream submodule remains unchanged.
 
 - Android emulator/device GUI, SAF, clipboard, intent and print validation beyond
   the verified native edits; equivalent-operation output comparison across platforms.
-- Windows/MSVC and Flatpak CI execution, installer deployment and production
+- Windows/MSVC and Flatpak CI repairs, installer deployment and production
   signing. Debug artifacts are previews, not store-ready releases.
+  [The inspected cross-platform run](https://github.com/jsc212/yolopdf/actions/runs/38505649654)
+  reports failures in Windows and Flatpak; its native Linux job uploaded an artifact.
 - Private invoices/brochures/scans: none were available. Broader font/layout
   coverage and a curated golden-image corpus are still needed.
 - Actual-size print proofs, including a measured 40 × 20 mm stamp. Tested

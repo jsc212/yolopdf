@@ -47,8 +47,10 @@ cmake --install build/linux --prefix "$HOME/.local"
 Ensure `$HOME/.local/bin` is on PATH, then start `yolopdf`. The desktop entry,
 SVG icon and AppStream metadata are installed under `$HOME/.local/share`.
 The window's Wayland app ID matches `org.yolopdf.app.desktop` for GNOME grouping.
-For Fedora Silverblue/Kinoite, use the [Flatpak recipe](../packaging/flatpak/README.md)
-or build in a Toolbox; host development packages need not be layered.
+For Fedora Silverblue/Kinoite, build with these packages in a Fedora Toolbox;
+host development packages need not be layered. The
+[Flatpak recipe](../packaging/flatpak/README.md) is experimental and its CI still
+requires repair; it is not a verified installation route.
 
 `.github/workflows/fedora.yml` builds with native Fedora 43/44 Qt, runs all
 fifteen suites and validates installed startup under a headless Wayland

@@ -17,8 +17,8 @@ and [engine commands and limits](docs/STAGE1.md).
 
 For Fedora 43/44, follow the [native Fedora build and install instructions](docs/DEVELOPMENT.md#linux--fedora),
 including the Qt Wayland plugin for GNOME. Fedora builds use distribution Qt
-packages and have a dedicated CI matrix. Silverblue/Kinoite can use the
-[Flatpak recipe](packaging/flatpak/README.md).
+packages and have a dedicated CI matrix. Silverblue/Kinoite can build in a
+Fedora Toolbox; the [Flatpak recipe](packaging/flatpak/README.md) remains experimental.
 
 Prerequisites: CMake 3.24+, Ninja, a C++20 compiler, GNU Make, Python 3.12,
 qpdf, Poppler, and dynamically linked Qt 6.8+ with Core, Gui, Quick,
