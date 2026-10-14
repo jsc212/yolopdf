@@ -162,17 +162,23 @@ FontMatch findExactFont(QString requested) {
     return {};
 #else
     QProcess process;
-    process.start("fc-match",
+    // fc-match ranks desktop family aliases ahead of PostScript names. Listing
+    // exact matches avoids rejecting an installed face in favour of a default.
+    process.start("fc-list",
                   {"-f", "%{file}\n%{postscriptname}\n%{index}\n", ":postscriptname=" + requested});
     if (!process.waitForFinished(5000) || process.exitCode() != 0)
         return {};
     const auto lines = QString::fromUtf8(process.readAllStandardOutput()).split('\n');
-    if (lines.size() < 3 || !lines[1].split(',').contains(requested, Qt::CaseInsensitive) ||
-        !QFileInfo(lines[0]).isFile())
-        return {};
-    bool ok = false;
-    const int index = lines[2].toInt(&ok);
-    return ok && index >= 0 ? FontMatch{lines[0], index} : FontMatch{};
+    for (int i = 0; i + 2 < lines.size(); i += 3) {
+        if (!lines[i + 1].split(',').contains(requested, Qt::CaseInsensitive) ||
+            !QFileInfo(lines[i]).isFile())
+            continue;
+        bool ok = false;
+        const int index = lines[i + 2].toInt(&ok);
+        if (ok && index >= 0)
+            return {lines[i], index};
+    }
+    return {};
 #endif
 }
 } // namespace yolo::platform

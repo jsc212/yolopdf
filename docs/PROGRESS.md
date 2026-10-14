@@ -44,7 +44,7 @@ later-stage features does not waive earlier verification gates.
 
 ## Validation
 
-The Linux CTest suite has fourteen suites. It exercises generated fixtures, engine
+The Linux CTest suite has fifteen suites. It exercises generated fixtures, engine
 contracts, safe sessions, native journal recovery, concurrent tile rendering,
 composite undo/redo, saved highlight appearances in print copies, mixed print
 page geometry, the CLI and QML startup/sample editing. Independent engine tests
@@ -61,10 +61,16 @@ native undo history are restored. Linux installed-layout smoke checks pass.
 
 A headless native Wayland check passes with Qt 6.8.2 and Weston 14 on Debian:
 the installed app renders a page, performs the sample engine edit and announces
-`org.yolopdf.app` as its Wayland app ID. The dedicated Fedora 43/44 CI runs this
-check with distribution Qt after the full suite. A local Fedora 44 container was
-created, but its package installation was blocked by the cloud egress policy;
-native Fedora execution remains pending until that CI or local run passes.
+`org.yolopdf.app` as its Wayland app ID. The
+[native Fedora 43/44 CI run](https://github.com/jsc212/yolopdf/actions/runs/38505649682)
+passed both jobs with distribution Qt, the fourteen then-existing suites and
+installed native Wayland startup. A later exact-font regression adds a fifteenth
+suite: a strong desktop family alias must not hide an installed PostScript face,
+and an unmatched name must never return a substitute. Linux now uses `fc-list`
+instead of ranked `fc-match` results. All fifteen suites pass locally.
+The separate local Fedora 44 container could not install packages because the
+cloud egress policy denied Fedora repository hosts; native CI supplied the
+distribution validation.
 
 Android native/Java compilation and arm64 APK/AAB/x86_64 APK creation pass.
 The native driver ran Latin-accent and CJK replacements on an API 29 emulator;
@@ -85,7 +91,7 @@ regressions before upgrading MuPDF. The upstream submodule remains unchanged.
 
 - Android emulator/device GUI, SAF, clipboard, intent and print validation beyond
   the verified native edits; equivalent-operation output comparison across platforms.
-- Native Fedora, Windows/MSVC and Flatpak CI execution, installer deployment and production
+- Windows/MSVC and Flatpak CI execution, installer deployment and production
   signing. Debug artifacts are previews, not store-ready releases.
 - Private invoices/brochures/scans: none were available. Broader font/layout
   coverage and a curated golden-image corpus are still needed.

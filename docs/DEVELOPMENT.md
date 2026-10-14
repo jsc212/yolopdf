@@ -34,8 +34,9 @@ build/linux/yolopdf
 
 Fedora's Declarative package supplies the Qt Quick Dialogs and QtTest QML
 modules. `qt6-qtwayland` enables native windows in GNOME's default Wayland
-session; X11 remains supported. `fontconfig` supplies `fc-match` for exact
-installed-font lookup. Keep Qt dynamically linked to the distribution libraries.
+session; X11 remains supported. `fontconfig` supplies `fc-list` for exact
+installed-font lookup without desktop family aliases selecting a different face.
+Keep Qt dynamically linked to the distribution libraries.
 
 To install locally with a launcher and PDF "Open With" entry:
 
@@ -50,7 +51,7 @@ For Fedora Silverblue/Kinoite, use the [Flatpak recipe](../packaging/flatpak/REA
 or build in a Toolbox; host development packages need not be layered.
 
 `.github/workflows/fedora.yml` builds with native Fedora 43/44 Qt, runs all
-fourteen suites and validates installed startup under a headless Wayland
+fifteen suites and validates installed startup under a headless Wayland
 compositor. To run the Wayland check locally:
 
 ```sh
@@ -125,14 +126,14 @@ on-device editing/save spike are separate gates.
 
 ## Checks and cloud activation
 
-CTest runs fourteen Linux suites, covering engine contracts, core sessions,
+CTest runs fifteen Linux suites, covering engine contracts, exact-font lookup, core sessions,
 recovery, stamp/font libraries, real process-kill tests, independent qpdf/Poppler/
 PDFium markings and print conversion, CLI/native replay, engine boundaries,
 Qt Quick drop rules, real QML window interactions and two app smoke checks.
 Missing independent tools are failures. UI tests draw a marker, add a strikeout,
 undo/redo, move an image, preview imported fonts, open a password-protected batch,
 and save editable/flattened copies. See [PROGRESS.md](PROGRESS.md) for limitations.
-Windows omits the Unix native replay and Linux process-kill targets. Private PDF documents stay outside
+Windows omits Linux fontconfig, native replay and process-kill targets. Private PDF documents stay outside
 the checkout. No real-document corpus was available in this task.
 
 The cloud toolchain is installed outside the repository, with a test venv and

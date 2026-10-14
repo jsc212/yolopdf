@@ -6,7 +6,7 @@ behind a C++ boundary. Tools focus on text, images, stamps, and pages.
 **Status:** development preview. The desktop UI has tabs, continuous viewing,
 text editing, image tools, stamps, page organization, annotations and printing.
 Safe saves, undo/redo, encrypted/signed-file handling and crash recovery are
-implemented. Fourteen Linux suites cover the engine, real UI workflows, recovery and
+implemented. Fifteen Linux suites cover the engine, real UI workflows, recovery and
 independent-viewer/print checks. Android APK/AAB builds are available; Windows,
 Flatpak CI, device print proofs and private-document validation remain gates.
 This is not a finished v1 release. See the [implementation plan](docs/IMPLEMENTATION_PLAN.md),

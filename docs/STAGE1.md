@@ -135,7 +135,7 @@ changing the live document or its undo history.
 
 ## Verification limits
 
-Fourteen Linux suites cover engine/core contracts, independent exports, native CLI
+Fifteen Linux suites cover engine/core contracts, exact-font lookup, independent exports, native CLI
 replay, CLI contracts, the header boundary and QML startup/sample editing.
 Independent checks use qpdf, Poppler and PDFium. Generated fixtures and source
 render comparisons do not replace private-document trials or curated goldens.
