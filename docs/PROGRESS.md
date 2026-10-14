@@ -38,6 +38,9 @@ later-stage features does not waive earlier verification gates.
 - Linux install integration and dependency notices, a Flatpak preview manifest,
   NSIS installer configuration, clean corresponding-source archives including
   recursive MuPDF dependencies, verified Qt source fetching and packaging CI.
+- Native Fedora 43/44 package instructions and CI using distribution Qt, explicit
+  Qt Wayland/fontconfig dependencies, local desktop installation instructions and
+  the matching GNOME/Wayland desktop-file identity.
 
 ## Validation
 
@@ -55,6 +58,13 @@ fonts without committing, and open encrypted batches in order. Library tests
 cover persistence, ZIP round trips and invalid-import rollback. A real saver is
 killed mid-write without changing the original; a killed editor's snapshot and
 native undo history are restored. Linux installed-layout smoke checks pass.
+
+A headless native Wayland check passes with Qt 6.8.2 and Weston 14 on Debian:
+the installed app renders a page, performs the sample engine edit and announces
+`org.yolopdf.app` as its Wayland app ID. The dedicated Fedora 43/44 CI runs this
+check with distribution Qt after the full suite. A local Fedora 44 container was
+created, but its package installation was blocked by the cloud egress policy;
+native Fedora execution remains pending until that CI or local run passes.
 
 Android native/Java compilation and arm64 APK/AAB/x86_64 APK creation pass.
 The native driver ran Latin-accent and CJK replacements on an API 29 emulator;
@@ -75,7 +85,7 @@ regressions before upgrading MuPDF. The upstream submodule remains unchanged.
 
 - Android emulator/device GUI, SAF, clipboard, intent and print validation beyond
   the verified native edits; equivalent-operation output comparison across platforms.
-- Windows/MSVC and Flatpak CI execution, installer deployment and production
+- Native Fedora, Windows/MSVC and Flatpak CI execution, installer deployment and production
   signing. Debug artifacts are previews, not store-ready releases.
 - Private invoices/brochures/scans: none were available. Broader font/layout
   coverage and a curated golden-image corpus are still needed.

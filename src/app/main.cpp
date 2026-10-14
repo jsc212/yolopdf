@@ -56,6 +56,9 @@ int main(int argc, char *argv[]) {
     QCoreApplication::setApplicationName("yolopdf");
     QCoreApplication::setOrganizationName("yolopdf");
     QCoreApplication::setApplicationVersion("0.1.0");
+#ifndef Q_OS_ANDROID
+    QGuiApplication::setDesktopFileName("org.yolopdf.app");
+#endif
     auto *provider = new PageImageProvider;
     DocumentController controller(provider);
 #if defined(Q_OS_ANDROID) && defined(YOLOPDF_ANDROID_TEST_HOOKS)

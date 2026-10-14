@@ -14,12 +14,14 @@ Qt is dynamically linked and Qt PDF is not used.
 
 ## Linux / Fedora
 
-Install Qt Base/Declarative development files, Qt Quick Dialogs, CMake 3.24+,
-Ninja, Make, a C++ compiler, Python with venv/pip, qpdf and Poppler. For Fedora
-with Qt 6.8+ (package names may differ by release):
+Use Fedora 43 or 44 with its native Qt packages (Qt 6.8 or newer is required).
+Install Qt Base/Declarative development files, the Wayland plugin, fontconfig,
+CMake 3.24+, Ninja, Make, a C++ compiler, Python with venv/pip, qpdf and Poppler:
 
 ```sh
-sudo dnf install gcc-c++ cmake ninja-build make python3 python3-pip qt6-qtbase-devel qt6-qtdeclarative-devel qpdf poppler-utils
+sudo dnf install git gcc-c++ cmake ninja-build make python3 python3-pip \
+  qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtwayland qt6-qtsvg \
+  fontconfig dejavu-sans-fonts qpdf poppler-utils
 git submodule update --init --recursive
 python3 -m venv /tmp/yolopdf-test-venv
 /tmp/yolopdf-test-venv/bin/python -m pip install -r tests/requirements.txt
@@ -29,6 +31,37 @@ ctest --preset linux
 build/linux/yolopdf-cli info document.pdf
 build/linux/yolopdf
 ```
+
+Fedora's Declarative package supplies the Qt Quick Dialogs and QtTest QML
+modules. `qt6-qtwayland` enables native windows in GNOME's default Wayland
+session; X11 remains supported. `fontconfig` supplies `fc-match` for exact
+installed-font lookup. Keep Qt dynamically linked to the distribution libraries.
+
+To install locally with a launcher and PDF "Open With" entry:
+
+```sh
+cmake --install build/linux --prefix "$HOME/.local"
+```
+
+Ensure `$HOME/.local/bin` is on PATH, then start `yolopdf`. The desktop entry,
+SVG icon and AppStream metadata are installed under `$HOME/.local/share`.
+The window's Wayland app ID matches `org.yolopdf.app.desktop` for GNOME grouping.
+For Fedora Silverblue/Kinoite, use the [Flatpak recipe](../packaging/flatpak/README.md)
+or build in a Toolbox; host development packages need not be layered.
+
+`.github/workflows/fedora.yml` builds with native Fedora 43/44 Qt, runs all
+fourteen suites and validates installed startup under a headless Wayland
+compositor. To run the Wayland check locally:
+
+```sh
+sudo dnf install weston desktop-file-utils
+desktop-file-validate "$HOME/.local/share/applications/org.yolopdf.app.desktop"
+bash tests/platform/test-wayland.sh "$HOME/.local/bin/yolopdf" build/linux/tests/wayland
+```
+
+The headless check proves native Wayland startup, page rendering and an engine
+edit; GNOME file portals, clipboard and a physical printer still require a
+desktop session. Do not force the offscreen test backend during normal use.
 
 For an externally installed Qt, add `-DCMAKE_PREFIX_PATH=/path/to/Qt/6.8.3/gcc_64`.
 For engine/CLI work only, set `-DYOLOPDF_BUILD_APP=OFF`. Test-only requirements
