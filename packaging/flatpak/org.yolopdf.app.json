@@ -1,0 +1,16 @@
+{
+  "app-id": "org.yolopdf.app",
+  "runtime": "org.kde.Platform",
+  "runtime-version": "6.8",
+  "sdk": "org.kde.Sdk",
+  "command": "yolopdf",
+  "finish-args": ["--share=ipc", "--socket=wayland", "--socket=fallback-x11", "--device=dri", "--socket=cups"],
+  "modules": [
+    {
+      "name": "yolopdf",
+      "buildsystem": "cmake-ninja",
+      "config-opts": ["-DCMAKE_BUILD_TYPE=Release", "-DBUILD_TESTING=OFF", "-DYOLOPDF_MUPDF_JOBS=4"],
+      "sources": [{"type": "archive", "path": "../../build/flatpak/yolopdf-source.tar.gz", "strip-components": 1}]
+    }
+  ]
+}

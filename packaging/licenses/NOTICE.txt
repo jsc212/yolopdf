@@ -1,0 +1,8 @@
+yolopdf is licensed AGPL-3.0-only and bundles the pinned open-source MuPDF engine.
+MuPDF, its fonts, and its thirdparty components have their own license notices.
+Qt is dynamically linked and used under its applicable LGPL/GPL terms.
+
+Source and build instructions: https://github.com/jsc212/yolopdf
+See docs/DEVELOPMENT.md and packaging/licenses/README.md. Distributors must provide
+matching corresponding source and preserve all upstream notices. Versions
+already released under the AGPL retain that license.

@@ -1,0 +1,50 @@
+name: Fedora compatibility
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fedora:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ['43', '44']
+    container: fedora:${{ matrix.release }}
+    steps:
+      - name: Install native Fedora tools and Qt
+        run: |
+          dnf -y install git gcc-c++ cmake ninja-build make python3 python3-pip \
+            qt6-qtbase-devel qt6-qtdeclarative-devel qt6-qtwayland qt6-qtsvg \
+            fontconfig dejavu-sans-fonts qpdf poppler-utils desktop-file-utils weston
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Pinned independent PDF verifiers
+        run: |
+          python3 -m venv /tmp/yolopdf-test-venv
+          /tmp/yolopdf-test-venv/bin/python -m pip install -r tests/requirements.txt
+      - name: Build with distribution Qt
+        run: |
+          cmake --preset linux -DPython3_EXECUTABLE=/tmp/yolopdf-test-venv/bin/python
+          cmake --build --preset linux
+      - name: Engine, printing and UI contracts
+        run: ctest --preset linux --output-on-failure
+      - name: Installed desktop and native Wayland startup
+        run: |
+          cmake --install build/linux --prefix /tmp/yolopdf-package
+          desktop-file-validate /tmp/yolopdf-package/share/applications/org.yolopdf.app.desktop
+          bash tests/platform/test-wayland.sh /tmp/yolopdf-package/bin/yolopdf build/linux/tests/wayland
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fedora-${{ matrix.release }}-validation
+          path: |
+            build/linux/Testing/Temporary/LastTest.log
+            build/linux/tests/wayland/**

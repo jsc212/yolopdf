@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.yolopdf.app</id>
+  <name>yolopdf</name>
+  <summary>Offline PDF editing with printable markings</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-only</project_license>
+  <description><p>Edit supported PDF text, images, stamps and pages. Highlights, strikeouts and marker strokes are saved in the PDF and included in printing. Export a flattened copy for sharing.</p><p>This development preview has limitations described in the project documentation.</p></description>
+  <launchable type="desktop-id">org.yolopdf.app.desktop</launchable>
+  <url type="homepage">https://github.com/jsc212/yolopdf</url>
+  <url type="bugtracker">https://github.com/jsc212/yolopdf/issues</url>
+  <provides><mediatype>application/pdf</mediatype></provides>
+  <content_rating type="oars-1.1"/>
+</component>
