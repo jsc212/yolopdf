@@ -6,8 +6,9 @@ behind a C++ boundary. Tools focus on text, images, stamps, and pages.
 **Status:** development preview. The desktop UI has tabs, continuous viewing,
 text editing, image tools, stamps, page organization, annotations and printing.
 Safe saves, undo/redo, encrypted/signed-file handling and crash recovery are
-implemented. Linux tests cover the engine and core workflows; Windows and
-Android execution and physical print proofs remain open release gates.
+implemented. Fourteen Linux suites cover the engine, real UI workflows, recovery and
+independent-viewer/print checks. Android APK/AAB builds are available; Windows,
+Flatpak CI, device print proofs and private-document validation remain gates.
 This is not a finished v1 release. See the [implementation plan](docs/IMPLEMENTATION_PLAN.md),
 [progress and remaining work](docs/PROGRESS.md), [development guide](docs/DEVELOPMENT.md)
 and [engine commands and limits](docs/STAGE1.md).
@@ -16,7 +17,8 @@ and [engine commands and limits](docs/STAGE1.md).
 
 Prerequisites: CMake 3.24+, Ninja, a C++20 compiler, GNU Make, Python 3.12,
 qpdf, Poppler, and dynamically linked Qt 6.8+ with Core, Gui, Quick,
-QuickControls2, Concurrent, Widgets, PrintSupport, Test, and the Qt Quick Dialogs QML module.
+QuickControls2, Concurrent, Widgets, PrintSupport, Test, QuickTest, and the Qt Quick
+Dialogs/QtTest QML modules.
 
 ```sh
 git submodule update --init --recursive
@@ -35,6 +37,16 @@ bundled dependencies statically. Qt remains dynamically linked. Qt PDF is not
 used. Input PDFs are opened without writes. `info` emits JSON and inventories
 font and image **resources**, including nested Forms. Occurrence selection and
 inline-image tracing are available through `images`.
+
+## Markings and printing
+
+Choose **Annotate** to highlight text, strike it out, or draw a translucent marker
+stroke. Markings are PDF annotations with saved appearances and print flags.
+**Print** includes them. **Save flattened copy** turns them into page content
+while keeping text searchable and retaining the editable original.
+
+Development APK/AAB files and packaging instructions are described in
+[the development guide](docs/DEVELOPMENT.md) and [progress report](docs/PROGRESS.md).
 
 ## License
 

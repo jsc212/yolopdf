@@ -226,6 +226,12 @@ void AssetLibrary::importStampsNow(const QUrl &url) {
                 auto origin = it.key().section('/', 0, 0);
                 if (QUuid(origin).isNull())
                     throw std::runtime_error("Invalid stamp ID");
+                if (metadata["version"].toInt() != 1)
+                    throw std::runtime_error("Unsupported stamp collection version");
+                const auto frame = metadata["gifFrame"].toDouble(-1);
+                if (!std::isfinite(frame) || frame < 0 || frame > 10000 ||
+                    frame != std::floor(frame))
+                    throw std::runtime_error("Invalid GIF frame");
                 auto artwork = metadata["artwork"].toString();
                 if (artwork != "artwork.png" && artwork != "artwork.svg" &&
                     artwork != "artwork.gif" && artwork != "artwork.pdf")
@@ -251,6 +257,16 @@ void AssetLibrary::importStampsNow(const QUrl &url) {
             created.append(folder);
             stamp.metadata["id"] = id;
             write(folder + "/" + stamp.metadata["artwork"].toString(), stamp.artwork);
+            auto proof = engine::createDocument();
+            proof->insertBlankPage(0, std::max(stamp.metadata["widthMm"].toDouble(), 1.0),
+                                   std::max(stamp.metadata["heightMm"].toDouble(), 1.0));
+            engine::StampSpec spec;
+            spec.artworkFile =
+                (folder + "/" + stamp.metadata["artwork"].toString()).toUtf8().toStdString();
+            spec.widthMm = stamp.metadata["widthMm"].toDouble();
+            spec.heightMm = stamp.metadata["heightMm"].toDouble();
+            spec.gifFrame = stamp.metadata["gifFrame"].toInt();
+            proof->placeStamp(0, spec);
             write(folder + "/stamp.json", QJsonDocument(stamp.metadata).toJson());
         }
     } catch (const std::exception &e) {

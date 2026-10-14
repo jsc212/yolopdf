@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "engine/api/Document.h"
 #include "platform/FontLocator.h"
+#include <QColor>
 #include <QCommandLineParser>
 #include <QCoreApplication>
 #include <QFileInfo>
@@ -118,8 +119,8 @@ void savePng(const QString &path, const RasterImage &raster) {
     if (!output.open(QIODevice::WriteOnly) || !image.save(&output, "PNG") || !output.commit())
         throw std::runtime_error("Cannot write output PNG");
 }
-void savePdf(const QString &path, IDocument &document) {
-    const auto bytes = document.pdfBytes();
+void savePdf(const QString &path, IDocument &document, bool flatten = false) {
+    const auto bytes = flatten ? document.flattenedBytes() : document.pdfBytes();
     QSaveFile output(path);
     output.setDirectWriteFallback(false);
     if (!output.open(QIODevice::WriteOnly) ||
@@ -168,13 +169,18 @@ int main(int argc, char *argv[]) {
     parser.addOption({"size", "Replacement font size (0 keeps original)", "points", "0"});
     parser.addOption({"widen", "Explicitly allow wider text; neighbours may overlap"});
     parser.addOption({"wrap-width", "Wrap width in displayed points", "points", "0"});
+    parser.addOption({"type", "Annotation: highlight, strikeout, marker, note, arrow, rectangle",
+                      "name", "highlight"});
+    parser.addOption({"color", "Annotation colour", "colour", "#ffd234"});
+    parser.addOption({"points", "Marker stroke in displayed points: x,y;x,y;...", "points"});
+    parser.addOption({"thickness", "Marker width in displayed points", "points", "8"});
     parser.process(app);
     const auto args = parser.positionalArguments();
     const QSet<QString> inspection = {"info", "text-runs", "text-lines", "font-match", "images"};
     const QSet<QString> simple = {
-        "render",       "copy-image",      "copy-area",     "replace-text", "replace-line",
-        "delete-image", "transform-image", "reorder-pages", "delete-pages", "rotate-page",
-        "blank-page",   "extract-pages",   "flatten-stamps"};
+        "render",       "copy-image",      "copy-area",      "replace-text", "replace-line",
+        "delete-image", "transform-image", "reorder-pages",  "delete-pages", "rotate-page",
+        "blank-page",   "extract-pages",   "flatten-stamps", "annotate",     "flatten-annotations"};
     const QSet<QString> sourceCommand = {"insert-pages", "insert-image", "replace-image",
                                          "place-stamp"};
     if (args.size() < 2 ||
@@ -295,7 +301,40 @@ int main(int argc, char *argv[]) {
             }
             for (const auto &warning : document->inspect().warnings)
                 QTextStream(stderr) << "Warning: " << QString::fromStdString(warning) << '\n';
-            if (command == "replace-text" || command == "replace-line") {
+            if (command == "annotate") {
+                AnnotationSpec spec;
+                const auto type = parser.value("type");
+                spec.type = type == "highlight"   ? AnnotationType::Highlight
+                            : type == "strikeout" ? AnnotationType::Strikeout
+                            : type == "marker"    ? AnnotationType::Marker
+                            : type == "note"      ? AnnotationType::Note
+                            : type == "arrow"     ? AnnotationType::Arrow
+                            : type == "rectangle" ? AnnotationType::Rectangle
+                                                  : AnnotationType::Other;
+                const double x = numeric(parser, "x") * 72 / 25.4,
+                             y = numeric(parser, "y") * 72 / 25.4;
+                spec.bounds = {x, y, x + numeric(parser, "width") * 72 / 25.4,
+                               y + numeric(parser, "height") * 72 / 25.4};
+                QColor color(parser.value("color"));
+                if (!color.isValid())
+                    throw std::runtime_error("Invalid annotation colour");
+                spec.color = {color.redF(), color.greenF(), color.blueF()};
+                spec.contents = parser.value("text").toUtf8().toStdString();
+                spec.opacity = parser.isSet("opacity") ? numeric(parser, "opacity")
+                                                       : (type == "marker" ? .4 : 1);
+                spec.thickness = numeric(parser, "thickness");
+                if (type == "marker")
+                    for (auto point : parser.value("points").split(';')) {
+                        const auto xy = point.split(',');
+                        bool okX = false, okY = false;
+                        const double px = xy.value(0).toDouble(&okX),
+                                     py = xy.value(1).toDouble(&okY);
+                        if (xy.size() != 2 || !okX || !okY)
+                            throw std::runtime_error("Invalid marker points");
+                        spec.points.push_back({px, py});
+                    }
+                document->addAnnotation(page, spec);
+            } else if (command == "replace-text" || command == "replace-line") {
                 if (!parser.isSet("text"))
                     throw Error(ErrorCode::InvalidArgument,
                                 "--text is required (an empty value deletes the run)");
@@ -385,7 +424,7 @@ int main(int argc, char *argv[]) {
                                           numeric(parser, "height"));
             else if (command == "flatten-stamps")
                 document->flattenStamps();
-            savePdf(args[2], *document);
+            savePdf(args[2], *document, command == "flatten-annotations");
         }
     } catch (const Error &error) {
         QTextStream(stderr) << "PDF error: " << error.what() << '\n';

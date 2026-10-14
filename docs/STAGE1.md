@@ -1,8 +1,10 @@
 # Stage 1 engine spike
 
-Stage 1 is in progress. Linux passes the generated-corpus checks, but Windows
-and Android execution, private-document trials, printed stamp proofs, have not closed the plan's Stage 1 gate. Later-stage features are described
-in [PROGRESS.md](PROGRESS.md).
+Stage 1 remains open. Linux passes the generated-corpus checks, and the native
+Android driver has edited Latin-accent and CJK fixtures on an emulator. Windows
+execution, Android GUI/SAF validation, private-document trials and printed stamp
+proofs have not closed the plan's gates. Later-stage features are described in
+[PROGRESS.md](PROGRESS.md).
 
 ## CLI examples
 
@@ -124,15 +126,16 @@ paired snapshots/journals with hashes and restores unsaved work as a separate
 copy when the source changed. Encrypted journals remain encrypted; passwords
 are never persisted. The native journal loader is tied to MuPDF 1.28.5.
 
-Highlights use text selection quads; notes, arrows and rectangles have saved
+Highlights and strikeouts use text selection quads; freehand markers use ink
+annotations. Notes, arrows and rectangles have saved
 appearances and printable flags. The raster print backend includes annotation
 appearances as page pixels and uses physical page geometry. The desktop UI has
-print preview with actual-size and fit choices. Strikeout, freehand marker and
-a flattened-sharing-copy UI are remaining requirements, tracked in PROGRESS.md.
+print preview with actual-size and fit choices. Save flattened copy bakes annotations into a separate vector PDF without
+changing the live document or its undo history.
 
 ## Verification limits
 
-Nine Linux suites cover engine/core contracts, independent exports, native CLI
+Fourteen Linux suites cover engine/core contracts, independent exports, native CLI
 replay, CLI contracts, the header boundary and QML startup/sample editing.
 Independent checks use qpdf, Poppler and PDFium. Generated fixtures and source
 render comparisons do not replace private-document trials or curated goldens.
@@ -145,5 +148,6 @@ actual-size view and printed 40 × 20 mm stamp proof remain open.
 
 The app now has a desktop/mobile editing UI, but UI automation and accessibility
 coverage are incomplete. Windows/Android CI definitions have not executed here.
-Android test hooks and the test-only provider default OFF and must never ship.
+Android test hooks and the test-only DocumentsProvider default OFF and must
+never ship. That provider is protected by the system MANAGE_DOCUMENTS permission.
 An APK build, device operation and physical print proof are separate gates.

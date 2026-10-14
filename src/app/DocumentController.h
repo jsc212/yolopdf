@@ -33,6 +33,8 @@ class DocumentController final : public QObject {
     Q_PROPERTY(QVariantList recoveryCandidates READ recoveryCandidates NOTIFY changed)
     Q_PROPERTY(int renderEpoch READ renderEpoch NOTIFY imagesChanged)
     Q_PROPERTY(QString stampPreviewSource READ stampPreviewSource NOTIFY imagesChanged)
+    Q_PROPERTY(QString comparisonOriginal READ comparisonOriginal NOTIFY imagesChanged)
+    Q_PROPERTY(QString comparisonEdited READ comparisonEdited NOTIFY imagesChanged)
   public:
     explicit DocumentController(PageImageProvider *, QObject *parent = nullptr);
     ~DocumentController() override;
@@ -41,6 +43,12 @@ class DocumentController final : public QObject {
     QString error() const { return error_; }
     QString title() const { return active_.value("title").toString(); }
     QString imageSource() const;
+    QString comparisonOriginal() const {
+        return compareOriginalKey_.isEmpty() ? QString() : "image://pages/" + compareOriginalKey_;
+    }
+    QString comparisonEdited() const {
+        return compareEditedKey_.isEmpty() ? QString() : "image://pages/" + compareEditedKey_;
+    }
     QVariantList tabs() const { return tabs_; }
     QVariantMap document() const { return active_; }
     QVariantList searchHits() const { return searchHits_; }
@@ -51,9 +59,11 @@ class DocumentController final : public QObject {
     }
     Q_INVOKABLE void openPdf(const QUrl &, bool fixtureSpike = false, const QString &password = {});
     Q_INVOKABLE void providePassword(const QString &);
+    Q_INVOKABLE void cancelPassword();
     Q_INVOKABLE void openSample() { openPdf(QUrl("qrc:/fixtures/stage1-sample.pdf"), true); }
     Q_INVOKABLE void activateTab(const QString &);
     Q_INVOKABLE void selectPage(int);
+    Q_INVOKABLE void setSelection(const QVariantList &pages, const QString &kind, int objectId);
     Q_INVOKABLE QString pageSource(int page, int dpi = 96);
     Q_INVOKABLE QString tileSource(int page, int dpi, double x, double y, double width,
                                    double height);
@@ -93,6 +103,9 @@ class DocumentController final : public QObject {
     Q_INVOKABLE void annotate(const QString &, double, double, double, double,
                               const QString &contents = {}, const QString &color = "#ffd234");
     Q_INVOKABLE void flattenStamps();
+    Q_INVOKABLE void markStroke(const QVariantList &, double thickness,
+                                const QString &color = "#ffd234", double opacity = .4);
+    Q_INVOKABLE void exportFlattened(const QUrl &);
     Q_INVOKABLE void insertPages(const QVariantList &, int, const QString &range = {});
     Q_INVOKABLE void deletePages(const QVariantList &);
     Q_INVOKABLE void duplicatePages(const QVariantList &);
@@ -124,6 +137,7 @@ class DocumentController final : public QObject {
   private:
     using Job = std::function<yolo::core::WorkerResult(yolo::core::DocumentWorker &)>;
     void submit(Job, QString event = {});
+    void openNext();
     void edit(std::function<void(yolo::engine::IDocument &)>);
     void editJob(Job);
     QString id() const { return active_.value("id").toString(); }
@@ -137,6 +151,8 @@ class DocumentController final : public QObject {
     QString error_, previewKey_, stampPreviewKey_;
     int renderEpoch_{}, previewToken_{}, stampPreviewToken_{};
     QSet<QString> pendingImages_, signedApproved_;
+    QString compareOriginalKey_, compareEditedKey_;
+    QList<QUrl> openQueue_;
     Job pendingEdit_;
     QUrl pendingSource_;
     QString pendingRecovery_;

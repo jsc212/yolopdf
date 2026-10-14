@@ -10,7 +10,8 @@ later-stage features does not waive earlier verification gates.
   desktop and Android CI definitions, and the AGPL/ownership policy.
 - Engine tracing and classification, original-font replacement with an automatic
   extraction/render guard, shared Form copy-on-write, explicit imported or exact
-  installed fonts, mixed-style line edits, size/colour changes and live preview.
+  installed fonts, mixed-style line edits, size/colour changes, live preview and
+  an original/selected-font comparison.
   Wrapping is restricted to supported single-style horizontal text and empty
   white space. Widening requires an explicit choice.
 - Per-occurrence image editing and original-stream clipboard grafting, area
@@ -24,27 +25,46 @@ later-stage features does not waive earlier verification gates.
   confirmation and incremental signed saves.
 - Recovery snapshots with integrity hashes and native undo history, source-change
   detection, persistent stamp/font libraries, stamp collection ZIP import/export,
-  keyboard nudging, alignment guides and page drag/drop routes.
-- PDF highlights built from selected text quads, notes, arrows and rectangles,
-  generated annotation appearances and printable flags. Desktop print preview
-  uses raster pages that include annotations and offers actual size or fit.
-  The print backend can produce a raster PDF copy with appearances baked into
-  page images; a separate UI action for a flattened sharing copy is pending.
-- Android source bridges for SAF, PDF intents, clipboard image URI grants and
-  PrintManager. These are not yet verified in an Android build or device run.
+  keyboard nudging, alignment guides, image resizing/rotation, high contrast,
+  mobile position controls, selection restoration and tested page-drop routing.
+- PDF highlights and strikeouts built from text quads, freehand ink markers,
+  notes, arrows and rectangles, saved appearances and print flags. Desktop print
+  preview includes annotations and offers actual size or fit. Save flattened copy
+  bakes annotations into vector page content in a new file, preserving searchable
+  text and leaving the editable document/history intact.
+- Android SAF/intent/clipboard/printing bridges, debug APK and AAB builds for
+  arm64, and an x86_64 test APK. The Qt/NDK build configuration and Bionic entropy
+  header handling are validated without altering the pinned vendor source.
+- Linux install integration and dependency notices, a Flatpak preview manifest,
+  NSIS installer configuration, clean corresponding-source archives including
+  recursive MuPDF dependencies, verified Qt source fetching and packaging CI.
 
 ## Validation
 
-The Linux CTest suite has nine suites. It exercises generated fixtures, engine
+The Linux CTest suite has fourteen suites. It exercises generated fixtures, engine
 contracts, safe sessions, native journal recovery, concurrent tile rendering,
 composite undo/redo, saved highlight appearances in print copies, mixed print
 page geometry, the CLI and QML startup/sample editing. Independent engine tests
 use qpdf, Poppler and PDFium. Missing verifiers fail tests; they are not skipped.
 
-The highlight/print regression checks use MuPDF to reopen saved annotations and
-raster print copies. Independent-viewer and physical-printer checks for those
-new annotation workflows still need to run. The signature fixture checks field
-markers and incremental byte preservation, not real cryptographic validity.
+Saved highlights, strikeouts and markers display independently in Poppler and
+PDFium. Print flags/appearances are checked, Poppler's print conversion includes
+markings, and flattened copies match appearances while retaining extracted text.
+Real-window tests draw/strike/undo/redo/export, move images, preview imported
+fonts without committing, and open encrypted batches in order. Library tests
+cover persistence, ZIP round trips and invalid-import rollback. A real saver is
+killed mid-write without changing the original; a killed editor's snapshot and
+native undo history are restored. Linux installed-layout smoke checks pass.
+
+Android native/Java compilation and arm64 APK/AAB/x86_64 APK creation pass.
+The native driver ran Latin-accent and CJK replacements on an API 29 emulator;
+both results passed qpdf and independent Poppler/PDFium text extraction.
+The GUI/SAF smoke test remains unverified: this cloud instance has no KVM,
+the initial software GPU failed to create an EGL context, and a second backend
+stalled during APK installation. Run the bounded harness on a working emulator
+or device; native engine success does not establish GUI/file-provider readiness.
+A real cryptographic signature proof and physical-printer checks remain pending;
+the signature fixture is a field marker.
 
 Recovery uses a compatibility adapter for the pinned MuPDF 1.28.5 journal
 format/ABI. Stock snapshot/deserializer behavior required incremental-section
@@ -53,23 +73,20 @@ regressions before upgrading MuPDF. The upstream submodule remains unchanged.
 
 ## Remaining requirements and release gates
 
-- The requested **strikeout, freehand marker and flattened-sharing-copy UI** are
-  pending. Highlights already persist as PDF annotations and the print backend
-  includes their appearances. Printing markings is a required release gate.
-- Windows/MSVC and Android APK/emulator execution, real-device SAF/intent/
-  clipboard/printing checks, and equivalent-output comparison across platforms.
+- Android emulator/device GUI, SAF, clipboard, intent and print validation beyond
+  the verified native edits; equivalent-operation output comparison across platforms.
+- Windows/MSVC and Flatpak CI execution, installer deployment and production
+  signing. Debug artifacts are previews, not store-ready releases.
 - Private invoices/brochures/scans: none were available. Broader font/layout
   coverage and a curated golden-image corpus are still needed.
 - Actual-size print proofs, including a measured 40 × 20 mm stamp. Tested
   Poppler/PDFium UserUnit raster behavior differs from MuPDF; object dimensions
   alone do not prove physical print size.
-- Full UI automation for DropRouter/tool modes, selection restoration through
-  undo, font-substitution comparison previews, mobile properties refinement,
-  resize/rotate handles and a complete keyboard/accessibility/high-contrast audit.
-- Stamp/font library workflow tests, save-interruption/crash injection and
-  recovery lifecycle tests beyond the current core contracts.
-- Flatpak/Windows installers, complete dependency notices and corresponding-
-  source bundles, signed APK/AAB release packaging and the manual viewer checklist.
+- Further touch/keyboard/accessibility audits, mobile interaction tests and the
+  manual independent-viewer checklist. Existing UI tests cover core workflows,
+  not every control, screen size, assistive tool or complex document.
+- Signed release artifacts and immutable Flathub sources after all release gates
+  and source/license obligations have been reviewed.
 - Family/weight font matching, complex-script shaping, tagged/PDF-A conformance
   preservation, unrestricted paragraph reflow and unsupported PDF structures.
 

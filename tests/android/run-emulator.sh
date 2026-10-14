@@ -1,26 +1,29 @@
 #!/usr/bin/env bash
 set -euo pipefail
 build_dir=${1:?Pass the Android build directory}
-mapfile -t apks < <(find "$build_dir/android-build/build/outputs/apk" -name '*.apk' -type f)
+adb_bin=$(command -v adb)
+# A wedged emulator must fail the job instead of hanging an adb command forever.
+adb() { timeout 60 "$adb_bin" "$@"; }
+mapfile -t apks < <(find "$build_dir/android-build/build/outputs/apk/debug" -name '*.apk' -type f)
 if [[ ${#apks[@]} != 1 ]]; then
-    echo "Expected exactly one test APK" >&2
+    echo "Expected exactly one debug test APK" >&2
     exit 1
 fi
 adb install -t "${apks[0]}"
 adb shell run-as org.yolopdf.app rm -f files/stage1.pdf files/stage1-complete
 adb logcat -c
-adb shell am start -n org.yolopdf.app/org.qtproject.qt.android.bindings.QtActivity \
-    --es applicationArguments '--fixture-spike --smoke-test --save-as content://org.yolopdf.app.stage1/document/stage1.pdf'
+adb shell am start -n org.yolopdf.app/org.yolopdf.YoloActivity \
+    --es applicationArguments "'--fixture-spike --smoke-test --save-as content://org.yolopdf.app.stage1/document/stage1.pdf'"
 found=false
-for attempt in {1..40}; do
-    if adb shell run-as org.yolopdf.app test -s files/stage1-complete; then
+for attempt in {1..120}; do
+    if adb shell "run-as org.yolopdf.app sh -c 'test -s files/stage1-complete'"; then
         found=true
         break
     fi
     sleep 1
 done
 if [[ "$found" != true ]]; then
-    adb logcat -d -s Qt:D yolopdf:D AndroidRuntime:E
+    adb logcat -d -s Qt:D default:D yolopdf:D AndroidRuntime:E
     exit 1
 fi
 adb shell run-as org.yolopdf.app cat files/stage1.pdf > "$build_dir/stage1-saf.pdf"

@@ -45,6 +45,10 @@ QString annotationType(engine::AnnotationType t) {
         return "Stamp";
     case engine::AnnotationType::Highlight:
         return "Highlight";
+    case engine::AnnotationType::Strikeout:
+        return "Strikeout";
+    case engine::AnnotationType::Marker:
+        return "Marker";
     case engine::AnnotationType::Note:
         return "Note";
     case engine::AnnotationType::Arrow:
@@ -132,6 +136,10 @@ WorkerResult DocumentWorker::snapshot() {
     auto &s = session(activeId);
     const auto info = s.document->inspect();
     const auto h = s.document->history();
+    if (s.selection.contains("activePage"))
+        for (const auto &page : info.pages)
+            if (page.id == s.selection.value("activePage").toInt())
+                s.page = page.index;
     s.page = std::clamp(s.page, 0, std::max(0, int(info.pages.size()) - 1));
     QVariantList pages;
     for (auto &p : info.pages) {
@@ -203,6 +211,7 @@ WorkerResult DocumentWorker::snapshot() {
                      {"revision", s.revision},
                      {"page", s.page},
                      {"pages", pages},
+                     {"selection", s.selection},
                      {"runs", runs},
                      {"images", images},
                      {"annotations", annotations},
@@ -263,14 +272,38 @@ WorkerResult DocumentWorker::open(const QUrl &url, const QString &password, bool
 }
 WorkerResult DocumentWorker::activate(const QString &id, int page) {
     activeId = id;
-    if (page >= 0)
-        session(id).page = page;
+    if (page >= 0) {
+        auto &s = session(id);
+        auto pages = s.document->inspect().pages;
+        if (page >= int(pages.size()))
+            throw std::runtime_error("Invalid page selection");
+        s.page = page;
+        s.selection["activePage"] = pages[page].id;
+        s.selection["kind"] = "";
+        s.selection["objectId"] = -1;
+        setSelection(id, s.selection);
+    }
     return snapshot();
+}
+void DocumentWorker::setSelection(const QString &id, const QVariantMap &selection) {
+    auto &s = session(id);
+    s.selection = selection;
+    const int position = s.document->history().position;
+    if (position < int(s.states.size()))
+        s.selections[s.states[position]] = selection;
+}
+void DocumentWorker::restoreSelection(Session &s) {
+    const int position = s.document->history().position;
+    if (position < int(s.states.size())) {
+        auto it = s.selections.find(s.states[position]);
+        s.selection = it == s.selections.end() ? QVariantMap() : it->second;
+    }
 }
 void DocumentWorker::markChanged(Session &s) {
     const auto h = s.document->history();
     s.states.resize(h.position + 1, 0);
     s.states[h.position] = nextState_++;
+    s.selections[s.states[h.position]] = s.selection;
     ++s.revision;
     for (auto it = scenes_.begin(); it != scenes_.end();)
         if (it->first.startsWith(s.id + "/"))
@@ -281,6 +314,9 @@ void DocumentWorker::markChanged(Session &s) {
 WorkerResult DocumentWorker::change(const QString &id,
                                     const std::function<void(engine::IDocument &)> &action) {
     auto &s = session(id);
+    const auto position = s.document->history().position;
+    if (position < int(s.states.size()))
+        s.selections[s.states[position]] = s.selection;
     action(*s.document);
     markChanged(s);
     try {
@@ -313,12 +349,14 @@ WorkerResult DocumentWorker::undo(const QString &id, bool redo) {
     else
         s.document->undo();
     ++s.revision;
+    restoreSelection(s);
     if (other) {
         if (redo)
             other->document->redo();
         else
             other->document->undo();
         ++other->revision;
+        restoreSelection(*other);
         persist(*other, true);
     }
     persist(s, true);
@@ -373,6 +411,7 @@ void DocumentWorker::persist(Session &s, bool force) {
         {"fingerprint", QString::fromLatin1(s.fingerprint)},
         {"generation", generation},
         {"page", s.page},
+        {"selection", QJsonObject::fromVariantMap(s.selection)},
         {"pdfHash",
          QString::fromLatin1(
              QCryptographicHash::hash(byteArray(data.pdf), QCryptographicHash::Sha256).toHex())},
@@ -429,6 +468,7 @@ WorkerResult DocumentWorker::restore(const QString &id, const QString &password)
     auto &s = session(activeId);
     s.document->loadRecoveryJournal(vector(j));
     s.page = obj["page"].toInt();
+    s.selection = obj["selection"].toObject().toVariantMap();
     const int steps = s.document->history().steps;
     s.states.resize(steps + 1);
     for (auto &state : s.states)
@@ -498,6 +538,8 @@ WorkerResult DocumentWorker::transfer(const QString &from, const QString &to,
         const int state = nextState_++;
         a.states[a.document->history().position] = state;
         b.states[b.document->history().position] = state;
+        a.selections[state] = a.selection;
+        b.selections[state] = b.selection;
         composites_[state] = {from, to, state};
         persist(a, true);
     }

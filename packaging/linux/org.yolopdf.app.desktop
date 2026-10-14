@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=yolopdf
+Comment=Edit PDF text, images, stamps, pages and printable markings
+Exec=yolopdf %f
+Icon=org.yolopdf.app
+Terminal=false
+Categories=Office;Graphics;
+MimeType=application/pdf;
+StartupNotify=true

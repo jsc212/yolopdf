@@ -82,9 +82,9 @@ public final class MobileIntegration {
         }
         @Override public void onWrite(PageRange[] ranges,ParcelFileDescriptor destination,CancellationSignal cancel,WriteResultCallback callback) {
             new Thread(() -> {
+                PrintedPdfDocument document=new PrintedPdfDocument(activity,attributes);
                 try(ParcelFileDescriptor fd=ParcelFileDescriptor.open(source,ParcelFileDescriptor.MODE_READ_ONLY);
                     PdfRenderer renderer=new PdfRenderer(fd);
-                    PrintedPdfDocument document=new PrintedPdfDocument(activity,attributes);
                     FileOutputStream output=new ParcelFileDescriptor.AutoCloseOutputStream(destination)) {
                     ArrayList<PageRange> written=new ArrayList<>();
                     for(int i=0;i<renderer.getPageCount();i++) {
@@ -108,6 +108,7 @@ public final class MobileIntegration {
                     }
                     document.writeTo(output);callback.onWriteFinished(written.toArray(new PageRange[0]));
                 }catch(Exception error){callback.onWriteFailed(error.getMessage());}
+                finally {try {document.close();}catch(RuntimeException ignored){}}
             },"yolopdf-print").start();
         }
         @Override public void onFinish() { source.delete();File parent=source.getParentFile();if(parent!=null)parent.delete(); }

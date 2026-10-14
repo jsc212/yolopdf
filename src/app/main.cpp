@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "DocumentController.h"
 #include "core/AssetLibrary.h"
+#include "core/DropRouter.h"
 #include <QClipboard>
 #include <QFile>
 #include <QGuiApplication>
 #ifdef YOLOPDF_DESKTOP_PRINT
 #include <QApplication>
 #endif
+#include <QDebug>
 #include <QDir>
 #include <QFileInfo>
 #include <QFileOpenEvent>
@@ -38,17 +40,29 @@ class FileOpenHandler final : public QObject {
 };
 
 int main(int argc, char *argv[]) {
+#if defined(Q_OS_ANDROID) && defined(YOLOPDF_ANDROID_TEST_HOOKS)
+    qInfo() << "Test startup: entering main";
+    qputenv("QT_QUICK_BACKEND", "software");
+    qputenv("QT_QUICK_CONTROLS_STYLE", "Basic");
+#endif
 #ifdef YOLOPDF_DESKTOP_PRINT
     QApplication app(argc, argv);
 #else
     QGuiApplication app(argc, argv);
+#endif
+#if defined(Q_OS_ANDROID) && defined(YOLOPDF_ANDROID_TEST_HOOKS)
+    qInfo() << "Test startup: GUI initialized";
 #endif
     QCoreApplication::setApplicationName("yolopdf");
     QCoreApplication::setOrganizationName("yolopdf");
     QCoreApplication::setApplicationVersion("0.1.0");
     auto *provider = new PageImageProvider;
     DocumentController controller(provider);
+#if defined(Q_OS_ANDROID) && defined(YOLOPDF_ANDROID_TEST_HOOKS)
+    qInfo() << "Test startup: document controller initialized";
+#endif
     yolo::core::AssetLibrary library;
+    yolo::core::DropRouter drops;
     FileOpenHandler openHandler;
     openHandler.controller = &controller;
     app.installEventFilter(&openHandler);
@@ -60,8 +74,8 @@ int main(int argc, char *argv[]) {
                           "/clipboard-" + QUuid::createUuid().toString(QUuid::WithoutBraces) +
                           ".png";
         if (image.save(file, "PNG")) {
-            const auto source = QJniObject::fromString(file),
-                       context = QNativeInterface::QAndroidApplication::context();
+            const auto source = QJniObject::fromString(file);
+            const auto context = QNativeInterface::QAndroidApplication::context();
             QJniObject::callStaticObjectMethod(
                 "org/yolopdf/MobileIntegration", "copyImage",
                 "(Landroid/content/Context;Ljava/lang/String;)Ljava/lang/String;", context.object(),
@@ -76,10 +90,14 @@ int main(int argc, char *argv[]) {
     engine.addImageProvider("pages", provider);
     engine.rootContext()->setContextProperty("documentController", &controller);
     engine.rootContext()->setContextProperty("assetLibrary", &library);
+    engine.rootContext()->setContextProperty("dropRouter", &drops);
     QObject::connect(
         &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
         [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     engine.loadFromModule("YoloPdf", "Main");
+#if defined(Q_OS_ANDROID) && defined(YOLOPDF_ANDROID_TEST_HOOKS)
+    qInfo() << "Test startup: QML loaded";
+#endif
     // A finite startup check for headless CI; successful QML creation is required.
     auto arguments = app.arguments();
 #if defined(Q_OS_ANDROID) && !defined(YOLOPDF_ANDROID_TEST_HOOKS)
@@ -106,7 +124,11 @@ int main(int argc, char *argv[]) {
         if (engine.rootObjects().isEmpty())
             return 1;
         if (fixtureSpike || openAt >= 0) {
+#if defined(Q_OS_ANDROID) && defined(YOLOPDF_ANDROID_TEST_HOOKS)
+            QTimer::singleShot(90000, &app, [] { QCoreApplication::exit(1); });
+#else
             QTimer::singleShot(20000, &app, [] { QCoreApplication::exit(1); });
+#endif
             QObject::connect(&controller, &DocumentController::loaded, &app, [&](bool success) {
                 if (!success) {
                     QTextStream(stderr) << controller.error() << '\n';

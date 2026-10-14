@@ -42,6 +42,22 @@ class SessionTest : public QObject {
         worker.activate(second);
         QCOMPARE(worker.snapshot().active.value("pages").toList().size(), 2);
     }
+    void undoRestoresSelectedPageIdentity() {
+        QTemporaryDir dir;
+        core::DocumentWorker worker(dir.path());
+        worker.open(fixture("nested.pdf"));
+        auto id = worker.activeId;
+        auto pages = worker.session(id).document->inspect().pages;
+        worker.setSelection(id,
+                            {{"activePage", pages[1].id}, {"pages", QVariantList{pages[1].id}}});
+        worker.change(id, [](auto &d) { d.rearrangePages({0}); });
+        QCOMPARE(worker.snapshot().active.value("pages").toList().size(), 1);
+        worker.undo(id);
+        auto result = worker.snapshot();
+        QCOMPARE(result.active.value("page").toInt(), 1);
+        QCOMPARE(result.active.value("selection").toMap().value("pages").toList().front().toInt(),
+                 pages[1].id);
+    }
     void crossDocumentMoveUndoRedo() {
         QTemporaryDir dir;
         core::DocumentWorker worker(dir.path());

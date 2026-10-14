@@ -262,6 +262,37 @@ class Stage1Test : public QObject {
         target->undo();
         QCOMPARE(target->images(0).size(), std::size_t{1});
     }
+    void strikeoutsMarkersAndFlattenedCopiesLeaveHistoryIntact() {
+        auto doc = openDocument(fixture("basic.pdf"));
+        const auto bounds = doc->textLines(0).front().bounds;
+        doc->addAnnotation(0, {AnnotationType::Strikeout, bounds, "cross out"});
+        AnnotationSpec stroke;
+        stroke.type = AnnotationType::Marker;
+        stroke.points = {{30, 110}, {70, 105}, {110, 110}};
+        stroke.opacity = .4;
+        doc->addAnnotation(0, stroke);
+        auto rendered = doc->render(0);
+        QCOMPARE(doc->annotations(0).size(), std::size_t{2});
+        const auto history = doc->history();
+        auto bytes = doc->flattenedBytes();
+        QTemporaryDir dir;
+        QFile file(dir.filePath("flat.pdf"));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+        file.close();
+        auto flat = openDocument(file.fileName().toStdString());
+        QVERIFY(flat->annotations(0).empty());
+        QVERIFY(withinOneLevel(flat->render(0).rgba, rendered.rgba));
+        QCOMPARE(doc->history().position, history.position);
+        QCOMPARE(doc->annotations(0).size(), std::size_t{2});
+        doc->undo();
+        QCOMPARE(doc->annotations(0).size(), std::size_t{1});
+        doc->redo();
+        QCOMPARE(doc->render(0).rgba, rendered.rgba);
+        stroke.points = {{0, 0}};
+        QVERIFY_EXCEPTION_THROWN(doc->addAnnotation(0, stroke), Error);
+        QCOMPARE(doc->history().position, history.position);
+    }
     void textSizeSearchAndAnnotations() {
         auto doc = openDocument(fixture("basic.pdf"));
         QVERIFY(!doc->search("yolopdf").empty());

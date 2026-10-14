@@ -136,7 +136,8 @@ struct AddTextSpec {
     double x{}, y{}, width{}, height{}, fontSize{12}; // Display points; y is baseline.
     std::array<double, 3> color{0, 0, 0};
 };
-enum class AnnotationType { Stamp, Highlight, Note, Arrow, Rectangle, Other };
+enum class AnnotationType { Stamp, Highlight, Strikeout, Marker, Note, Arrow, Rectangle, Other };
+using Point = std::array<double, 2>;
 struct AnnotationInfo {
     int id{};
     AnnotationType type{};
@@ -150,6 +151,8 @@ struct AnnotationSpec {
     std::string contents;
     std::array<double, 3> color{1, .8, 0};
     double opacity{1};
+    std::vector<Point> points; // One marker stroke, in displayed physical points.
+    double thickness{8};       // Marker width in displayed physical points.
 };
 struct ImageOccurrence {
     int id{};
@@ -227,6 +230,7 @@ class IDocument {
                              const Matrix &displayTransform) = 0;
     virtual void placeStamp(int pageIndex, const StampSpec &stamp) = 0;
     virtual void flattenStamps() = 0;
+    virtual std::vector<std::uint8_t> flattenedBytes() = 0; // Copy; leaves live history intact.
     virtual void insertPages(int at, const std::vector<PageSource> &sources) = 0;
     virtual void rearrangePages(const std::vector<int> &order) = 0;
     virtual void rotatePage(int pageIndex, int degrees) = 0;

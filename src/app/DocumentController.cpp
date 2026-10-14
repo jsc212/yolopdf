@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "DocumentController.h"
+#include "core/DropRouter.h"
 #include "platform/FileAccess.h"
 #include "platform/FontLocator.h"
 #include <QColor>
@@ -149,7 +150,7 @@ void DocumentController::submit(Job job, QString event) {
             } catch (const engine::Error &e) {
                 result = w->snapshot();
                 result.error = QString::fromUtf8(e.what());
-                if (e.code() == engine::ErrorCode::PasswordRequired)
+                if (e.code() == engine::ErrorCode::PasswordRequired && event == "loaded")
                     result.event = "password";
             } catch (const std::exception &e) {
                 result = w->snapshot();
@@ -188,9 +189,19 @@ void DocumentController::submit(Job job, QString event) {
                     auto actual = result.event.isEmpty() ? event : result.event;
                     if (actual == "password")
                         emit s->passwordRequired(s->pendingSource_);
-                    else if (actual == "loaded")
+                    else if (actual == "loaded") {
+                        if (!result.error.isEmpty())
+                            s->openQueue_.clear();
                         emit s->loaded(result.error.isEmpty());
-                    else if (actual == "saved")
+                        if (result.error.isEmpty())
+                            QMetaObject::invokeMethod(
+                                s,
+                                [guard] {
+                                    if (guard)
+                                        guard->openNext();
+                                },
+                                Qt::QueuedConnection);
+                    } else if (actual == "saved")
                         emit s->saved(result.error.isEmpty());
                 },
                 Qt::QueuedConnection);
@@ -198,6 +209,7 @@ void DocumentController::submit(Job job, QString event) {
         Qt::QueuedConnection);
 }
 void DocumentController::openPdf(const QUrl &url, bool spike, const QString &password) {
+    openQueue_.clear();
     pendingRecovery_.clear();
     pendingSource_ = url;
     cancelPreview();
@@ -409,9 +421,35 @@ void DocumentController::previewText(int run, const QString &text, const QUrl &f
     const auto tab = id();
     QPointer<DocumentController> guard(this);
     QMetaObject::invokeMethod(worker_, [=, w = worker_] {
-        QImage value;
+        QImage value, original;
+        QRect comparison;
         QString error;
         try {
+            if (!font.isEmpty()) {
+                auto &doc = *w->session(tab).document;
+                original = core::image(doc.render(pg, 96));
+                for (const auto &line : doc.textLines(pg))
+                    if (line.id == run) {
+                        const double physicalSize =
+                            size > 0 ? size : std::max(1.0, line.bounds.y1 - line.bounds.y0);
+                        const double rows =
+                            wrap > 0 ? std::max(1.0, std::ceil(text.toUtf8().size() * physicalSize *
+                                                               1.5 / wrap))
+                                     : 1;
+                        comparison = QRect(int(line.bounds.x0 * 96 / 72) - 8,
+                                           int(line.bounds.y0 * 96 / 72) - 8,
+                                           int(std::max(line.bounds.x1 - line.bounds.x0,
+                                                        text.toUtf8().size() * physicalSize * 1.5) *
+                                               96 / 72) +
+                                               16,
+                                           int(std::max(line.bounds.y1 - line.bounds.y0,
+                                                        rows * physicalSize * 1.5) *
+                                               96 / 72) +
+                                               16)
+                                         .intersected(original.rect());
+                        break;
+                    }
+            }
             QString path;
             if (!font.isEmpty())
                 path = asset(font, ".ttf");
@@ -437,9 +475,21 @@ void DocumentController::previewText(int run, const QString &text, const QUrl &f
             if (error.isEmpty()) {
                 guard->previewKey_ = tab + "/preview/" + QString::number(token);
                 guard->provider_->put(guard->previewKey_, value);
+                guard->compareOriginalKey_.clear();
+                guard->compareEditedKey_.clear();
+                if (!original.isNull() && !comparison.isEmpty()) {
+                    guard->compareOriginalKey_ =
+                        tab + "/comparison-original/" + QString::number(token);
+                    guard->compareEditedKey_ = tab + "/comparison-edited/" + QString::number(token);
+                    guard->provider_->put(guard->compareOriginalKey_, original.copy(comparison));
+                    guard->provider_->put(guard->compareEditedKey_, value.copy(comparison));
+                }
                 ++guard->renderEpoch_;
-            } else
+            } else {
                 guard->previewKey_.clear();
+                guard->compareOriginalKey_.clear();
+                guard->compareEditedKey_.clear();
+            }
             emit guard->changed();
             emit guard->imagesChanged();
             emit guard->previewFinished(error.isEmpty());
@@ -447,6 +497,8 @@ void DocumentController::previewText(int run, const QString &text, const QUrl &f
     });
 }
 void DocumentController::cancelPreview() {
+    compareOriginalKey_.clear();
+    compareEditedKey_.clear();
     ++previewToken_;
     previewKey_.clear();
     ++renderEpoch_;
@@ -646,6 +698,7 @@ void DocumentController::annotate(const QString &type, double x, double y, doubl
         QColor c(color);
         engine::AnnotationSpec s;
         s.type = type == "Highlight"   ? engine::AnnotationType::Highlight
+                 : type == "Strikeout" ? engine::AnnotationType::Strikeout
                  : type == "Arrow"     ? engine::AnnotationType::Arrow
                  : type == "Rectangle" ? engine::AnnotationType::Rectangle
                                        : engine::AnnotationType::Note;
@@ -770,19 +823,25 @@ void DocumentController::transferPages(const QString &to, const QVariantList &v,
     submit([=, from = id()](auto &w) { return w.transfer(from, to, indices(v), at, move); });
 }
 void DocumentController::dropFiles(const QVariantList &urls, bool overview, int at) {
-    if (overview && hasDocument())
-        insertPages(urls, at);
-    else
-        submit(
-            [urls](auto &w) {
-                core::WorkerResult r;
-                for (auto &u : urls)
-                    r = w.open(u.toUrl());
-                return r;
-            },
-            "loaded");
+    core::DropRouter router;
+    const auto route = router.route(overview ? "overview" : "main", hasDocument(), false,
+                                    active_.value("pages").toList().size(), at, false, urls);
+    if (route.value("action").toString() == "ignore")
+        return;
+    if (route.value("action").toString() == "insert")
+        insertPages(urls, route.value("at").toInt());
+    else {
+        if (busy_)
+            return;
+        openQueue_.clear();
+        pendingRecovery_.clear();
+        for (const auto &url : urls)
+            openQueue_.append(url.toUrl());
+        openNext();
+    }
 }
 void DocumentController::restoreRecovery(const QString &recovery, const QString &password) {
+    openQueue_.clear();
     pendingRecovery_ = recovery;
     submit(
         [=](auto &w) {
@@ -859,6 +918,91 @@ void DocumentController::findInstalledFont(const QString &name) {
 void DocumentController::providePassword(const QString &password) {
     if (!pendingRecovery_.isEmpty())
         restoreRecovery(pendingRecovery_, password);
-    else
-        openPdf(pendingSource_, false, password);
+    else {
+        const auto source = pendingSource_;
+        submit([source, password](auto &w) { return w.open(source, password); }, "loaded");
+    }
+}
+void DocumentController::cancelPassword() {
+    openQueue_.clear();
+    pendingRecovery_.clear();
+    pendingSource_.clear();
+}
+void DocumentController::openNext() {
+    if (busy_ || openQueue_.isEmpty())
+        return;
+    pendingSource_ = openQueue_.takeFirst();
+    cancelPreview();
+    const auto source = pendingSource_;
+    submit([source](auto &w) { return w.open(source); }, "loaded");
+}
+
+void DocumentController::markStroke(const QVariantList &points, double thickness,
+                                    const QString &color, double opacity) {
+    edit([=, pg = page()](auto &d) {
+        engine::AnnotationSpec s;
+        s.type = engine::AnnotationType::Marker;
+        s.thickness = thickness;
+        s.opacity = opacity;
+        QColor c(color);
+        if (!c.isValid())
+            throw std::runtime_error("Choose a marker colour");
+        s.color = {c.redF(), c.greenF(), c.blueF()};
+        for (auto point : points) {
+            auto p = point.toList();
+            if (p.size() != 2)
+                throw std::runtime_error("Invalid marker point");
+            s.points.push_back({p[0].toDouble(), p[1].toDouble()});
+        }
+        d.addAnnotation(pg, s);
+    });
+}
+void DocumentController::exportFlattened(const QUrl &destination) {
+    editJob([tab = id(), destination](auto &w) {
+        auto &s = w.session(tab);
+        if (destination == s.source || (destination.isLocalFile() && s.source.isLocalFile() &&
+                                        QFileInfo(destination.toLocalFile()).exists() &&
+                                        QFileInfo(destination.toLocalFile()).canonicalFilePath() ==
+                                            QFileInfo(s.source.toLocalFile()).canonicalFilePath()))
+            throw std::runtime_error(
+                "Choose a different file for the flattened copy to keep your editable original");
+        const auto bytes = s.document->flattenedBytes();
+        QTemporaryFile cache(QStandardPaths::writableLocation(QStandardPaths::CacheLocation) +
+                             "/flattened-XXXXXX.pdf");
+        if (!cache.open() ||
+            cache.write(reinterpret_cast<const char *>(bytes.data()), bytes.size()) !=
+                qint64(bytes.size()) ||
+            !cache.flush())
+            throw std::runtime_error("Cannot create flattened copy");
+        platform::saveCachedPdf(cache.fileName(), destination);
+        auto r = w.snapshot();
+        r.event = "saved";
+        return r;
+    });
+}
+void DocumentController::setSelection(const QVariantList &pages, const QString &kind,
+                                      int objectId) {
+    if (!hasDocument())
+        return;
+    const auto tab = id();
+    const auto geometry = active_.value("pages").toList();
+    QVariantList ids;
+    for (auto item : pages) {
+        const int index = item.toInt();
+        if (index >= 0 && index < geometry.size())
+            ids.append(geometry[index].toMap().value("id"));
+    }
+    QVariantMap selection{{"pages", ids},
+                          {"kind", kind},
+                          {"objectId", objectId},
+                          {"activePage", geometry.value(page()).toMap().value("id")}};
+    QMetaObject::invokeMethod(
+        worker_,
+        [w = worker_, tab, selection] {
+            try {
+                w->setSelection(tab, selection);
+            } catch (...) {
+            }
+        },
+        Qt::QueuedConnection);
 }

@@ -18,6 +18,8 @@ struct Session {
     int page{}, revision{}, savedState{};
     std::vector<int> states{0};
     qint64 recoveryAt{};
+    QVariantMap selection;
+    std::map<int, QVariantMap> selections;
 };
 struct WorkerResult {
     QVariantList tabs;
@@ -35,6 +37,8 @@ class DocumentWorker final : public QObject {
     WorkerResult snapshot();
     WorkerResult open(const QUrl &, const QString &password = {}, bool spike = false);
     WorkerResult activate(const QString &, int page = -1);
+    void setSelection(const QString &, const QVariantMap &);
+    void restoreSelection(Session &);
     WorkerResult change(const QString &, const std::function<void(engine::IDocument &)> &);
     WorkerResult undo(const QString &, bool redo = false);
     WorkerResult save(const QString &, const QUrl &);

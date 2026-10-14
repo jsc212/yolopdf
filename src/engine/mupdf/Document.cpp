@@ -364,12 +364,14 @@ class Document final : public IDocument {
                  [&] { return pdf_first_annot(ctx_, reinterpret_cast<pdf_page *>(page.get())); });
              a; a = call(ctx_, [&] { return pdf_next_annot(ctx_, a); })) {
             const auto type = call(ctx_, [&] { return pdf_annot_type(ctx_, a); });
-            AnnotationType own = type == PDF_ANNOT_STAMP       ? AnnotationType::Stamp
-                                 : type == PDF_ANNOT_HIGHLIGHT ? AnnotationType::Highlight
-                                 : type == PDF_ANNOT_TEXT      ? AnnotationType::Note
-                                 : type == PDF_ANNOT_LINE      ? AnnotationType::Arrow
-                                 : type == PDF_ANNOT_SQUARE    ? AnnotationType::Rectangle
-                                                               : AnnotationType::Other;
+            AnnotationType own = type == PDF_ANNOT_STAMP        ? AnnotationType::Stamp
+                                 : type == PDF_ANNOT_HIGHLIGHT  ? AnnotationType::Highlight
+                                 : type == PDF_ANNOT_STRIKE_OUT ? AnnotationType::Strikeout
+                                 : type == PDF_ANNOT_INK        ? AnnotationType::Marker
+                                 : type == PDF_ANNOT_TEXT       ? AnnotationType::Note
+                                 : type == PDF_ANNOT_LINE       ? AnnotationType::Arrow
+                                 : type == PDF_ANNOT_SQUARE     ? AnnotationType::Rectangle
+                                                                : AnnotationType::Other;
             auto *obj = call(ctx_, [&] { return pdf_annot_obj(ctx_, a); });
             result.push_back({objectNumber(ctx_, obj), own,
                               mupdf::rect(call(ctx_, [&] { return pdf_bound_annot(ctx_, a); })),
@@ -380,9 +382,12 @@ class Document final : public IDocument {
     }
     void addAnnotation(int index, const AnnotationSpec &spec) override {
         checkThread();
-        validateRect(spec.bounds);
+        if (spec.type != AnnotationType::Marker)
+            validateRect(spec.bounds);
         const auto type = spec.type == AnnotationType::Note        ? PDF_ANNOT_TEXT
                           : spec.type == AnnotationType::Highlight ? PDF_ANNOT_HIGHLIGHT
+                          : spec.type == AnnotationType::Strikeout ? PDF_ANNOT_STRIKE_OUT
+                          : spec.type == AnnotationType::Marker    ? PDF_ANNOT_INK
                           : spec.type == AnnotationType::Arrow     ? PDF_ANNOT_LINE
                           : spec.type == AnnotationType::Rectangle ? PDF_ANNOT_SQUARE
                                                                    : PDF_ANNOT_UNKNOWN;
@@ -395,7 +400,7 @@ class Document final : public IDocument {
             throw Error(ErrorCode::InvalidArgument, "Invalid opacity");
         auto page = loadedPage(index);
         std::vector<fz_quad> highlights;
-        if (type == PDF_ANNOT_HIGHLIGHT) {
+        if (type == PDF_ANNOT_HIGHLIGHT || type == PDF_ANNOT_STRIKE_OUT) {
             auto text = structured(index);
             highlights.resize(2048);
             const auto r = mupdf::rect(spec.bounds);
@@ -405,8 +410,27 @@ class Document final : public IDocument {
             });
             if (n == 0 || n >= int(highlights.size()))
                 throw Error(ErrorCode::Unsupported,
-                            "Select text to highlight; selection must be fewer than 2048 lines");
+                            "Select text to mark; selection must be fewer than 2048 lines");
             highlights.resize(n);
+        }
+        std::vector<fz_point> stroke;
+        double strokeWidth = spec.thickness;
+        if (type == PDF_ANNOT_INK) {
+            if (spec.points.size() < 2 || spec.points.size() > 4096 ||
+                !std::isfinite(strokeWidth) || strokeWidth < .25 || strokeWidth > 144)
+                throw Error(ErrorCode::InvalidArgument,
+                            "Marker strokes require 2–4096 points and a width of .25–144 pt");
+            for (const auto &p : spec.points) {
+                if (!std::isfinite(p[0]) || !std::isfinite(p[1]) || std::abs(p[0]) > 1e7 ||
+                    std::abs(p[1]) > 1e7)
+                    throw Error(ErrorCode::InvalidArgument, "Invalid marker coordinates");
+                stroke.push_back({float(p[0]), float(p[1])});
+            }
+            const auto matrix = mupdf::pageTransform(ctx_, doc_, index);
+            const auto scale = std::hypot(matrix.a, matrix.b);
+            if (scale < .0001)
+                throw Error(ErrorCode::InvalidDocument, "Invalid page scale");
+            strokeWidth /= scale;
         }
         mupdf::Transaction operation(ctx_, doc_, "Add annotation", signedAllowed_);
         auto *a = call(ctx_, [&] {
@@ -418,8 +442,12 @@ class Document final : public IDocument {
             if (type == PDF_ANNOT_LINE) {
                 pdf_set_annot_line(ctx_, a, {r.x0, r.y0}, {r.x1, r.y1});
                 pdf_set_annot_line_end_style(ctx_, a, PDF_ANNOT_LE_CLOSED_ARROW);
-            } else if (type == PDF_ANNOT_HIGHLIGHT) {
+            } else if (type == PDF_ANNOT_HIGHLIGHT || type == PDF_ANNOT_STRIKE_OUT) {
                 pdf_set_annot_quad_points(ctx_, a, highlights.size(), highlights.data());
+            } else if (type == PDF_ANNOT_INK) {
+                const int count = stroke.size();
+                pdf_set_annot_ink_list(ctx_, a, 1, &count, stroke.data());
+                pdf_set_annot_border_width(ctx_, a, strokeWidth);
             } else
                 pdf_set_annot_rect(ctx_, a, r);
             pdf_set_annot_color(ctx_, a, 3, color);
@@ -860,6 +888,36 @@ class Document final : public IDocument {
                 call(ctx_, [&] { return pdf_count_pages(ctx_, doc_); }))
             throw Error(ErrorCode::UnsafeEdit,
                         "Saved PDF encryption or page count changed unexpectedly");
+        return result;
+    }
+    std::vector<std::uint8_t> flattenedBytes() override {
+        checkThread();
+        mupdf::ensureEditable(ctx_, doc_, signedAllowed_);
+        const auto bytes = pdfBytes();
+        mupdf::Ref<fz_stream, fz_drop_stream> stream(
+            ctx_, call(ctx_, [&] { return fz_open_memory(ctx_, bytes.data(), bytes.size()); }));
+        mupdf::Ref<pdf_document, pdf_drop_document> copy(
+            ctx_, call(ctx_, [&] { return pdf_open_document_with_stream(ctx_, stream.get()); }));
+        if (call(ctx_, [&] { return pdf_needs_password(ctx_, copy.get()); }) && !call(ctx_, [&] {
+                return pdf_authenticate_password(ctx_, copy.get(), password_.c_str());
+            }))
+            throw Error(ErrorCode::UnsafeEdit, "Cannot unlock flattened copy");
+        mupdf::checked(ctx_, [&] { pdf_bake_document(ctx_, copy.get(), 1, 0); });
+        auto result = mupdf::serialize(ctx_, copy.get());
+        mupdf::Ref<fz_stream, fz_drop_stream> verifyStream(
+            ctx_, call(ctx_, [&] { return fz_open_memory(ctx_, result.data(), result.size()); }));
+        mupdf::Ref<pdf_document, pdf_drop_document> verified(
+            ctx_,
+            call(ctx_, [&] { return pdf_open_document_with_stream(ctx_, verifyStream.get()); }));
+        if (call(ctx_, [&] { return pdf_needs_password(ctx_, verified.get()); }) &&
+            !call(ctx_, [&] {
+                return pdf_authenticate_password(ctx_, verified.get(), password_.c_str());
+            }))
+            throw Error(ErrorCode::UnsafeEdit, "Flattened encryption could not be verified");
+        if ((verified.get()->crypt != nullptr) != (doc_->crypt != nullptr) ||
+            call(ctx_, [&] { return pdf_count_pages(ctx_, verified.get()); }) !=
+                call(ctx_, [&] { return pdf_count_pages(ctx_, doc_); }))
+            throw Error(ErrorCode::UnsafeEdit, "Flattened copy changed encryption or page count");
         return result;
     }
     HistoryState history() override {

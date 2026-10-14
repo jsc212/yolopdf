@@ -65,6 +65,30 @@ jobs:
           pdftotext build/linux/tests/corpus/basic.pdf build/linux/tests/basic.txt
           python3 -c "from pathlib import Path; assert 'Hello yolopdf' in Path('build/linux/tests/basic.txt').read_text()"
 
+      - name: Verify installed layout and package source
+        run: |
+          cmake --install build/${{ matrix.preset }} --prefix build/package
+          python tools/package_source.py --output build/yolopdf-source.tar.gz --notices build/dependency-notices
+      - name: Windows Qt corresponding source
+        if: runner.os == 'Windows'
+        run: python tools/fetch_qt_source.py --output build/qt-source
+      - name: Windows installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install nsis --yes --no-progress
+          $env:PATH += ";C:\Program Files (x86)\NSIS"
+          cpack --config build/windows-msvc/CPackConfig.cmake -G NSIS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: yolopdf-${{ matrix.preset }}-preview-and-source
+          path: |
+            build/yolopdf-source.tar.gz
+            build/dependency-notices/**
+            build/qt-source/**
+            yolopdf-*.exe
+          if-no-files-found: error
+
   android:
     runs-on: ubuntu-24.04
     steps:
@@ -92,10 +116,21 @@ jobs:
           cmake --preset android-arm64 -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
       - name: Build APK and CLI
         run: cmake --build --preset android-arm64 --target apk yolopdf-cli
+      - name: Matching application and Qt source
+        run: |
+          python3 tools/package_source.py --output build/yolopdf-source.tar.gz --notices build/dependency-notices
+          python3 tools/fetch_qt_source.py --output build/qt-source
+      - name: Build preview AAB
+        run: cmake --build --preset android-arm64 --target aab
       - uses: actions/upload-artifact@v4
         with:
           name: yolopdf-android-arm64-debug
-          path: build/android-arm64/android-build/build/outputs/apk/**/*.apk
+          path: |
+            build/android-arm64/android-build/build/outputs/apk/**/*.apk
+            build/android-arm64/android-build/build/outputs/bundle/**/*.aab
+            build/yolopdf-source.tar.gz
+            build/qt-source/**
+            build/dependency-notices/**
           if-no-files-found: error
 
   android-emulator:
@@ -147,3 +182,20 @@ jobs:
         with:
           name: android-stage1-results
           path: build/android-x86_64/*-*.pdf
+
+  flatpak:
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:kde-6.8
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Prepare matching source
+        run: python3 tools/package_source.py --output build/flatpak/yolopdf-source.tar.gz --notices build/flatpak/notices
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: yolopdf.flatpak
+          manifest-path: packaging/flatpak/org.yolopdf.app.json
+          cache-key: flatpak-builder-${{ github.sha }}
